@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import character_card, empty, filter_link %}
+{% block title %}{{ loc.name }} · Rick & Morty{% endblock %}
+{% block content %}
+<a class="back" href="/locations">← Tous les lieux</a>
+<article class="panel detail detail-wide">
+  <div class="cover cover-big">{{ location_art(loc) }}</div>
+  <div>
+    <h1>{{ loc.name }}</h1>
+    <dl class="facts">
+      <dt>Type</dt><dd>{{ filter_link('/locations', 'type', loc.type) }}</dd>
+      <dt>Dimension</dt><dd>{{ filter_link('/locations', 'dimension', loc.dimension) }}</dd>
+      <dt>Résidents</dt><dd>{{ residents | length }}</dd>
+      <dt>Épisodes liés</dt><dd>{{ episodes | length }}</dd>
+    </dl>
+    <p class="muted hint">Clique sur le type ou la dimension pour voir les lieux similaires.</p>
+  </div>
+</article>
+
+<section class="panel">
+  <h2>{{ residents | length }} résident{{ 's' if residents | length > 1 }}</h2>
+  {% if residents %}
+    <div class="grid">{% for c in residents %}{{ character_card(c) }}{% endfor %}</div>
+  {% else %}{{ empty("Personne ne vit ici… ou personne n'a survécu.") }}{% endif %}
+</section>
+
+{% if episodes %}
+<section class="panel">
+  <h2>Épisodes où apparaissent ses résidents</h2>
+  <div class="chips">
+    {% for ep, n in episodes %}
+      <a class="chip" href="/episodes/{{ ep.id }}" title="{{ n }} résident{{ 's' if n > 1 }} présent{{ 's' if n > 1 }}">
+        <b>{{ ep.episode }}</b> {{ ep.name }} <span class="count">{{ n }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if neighbours %}
+<section class="panel">
+  <div class="section-head">
+    <h2>Autres lieux de la dimension « {{ loc.dimension }} »</h2>
+    {% if neighbours_count > neighbours | length %}
+      <a class="btn-ghost" href="/locations?{{ {'dimension': loc.dimension} | urlencode }}">Voir les {{ neighbours_count }} →</a>
+    {% endif %}
+  </div>
+  <div class="grid grid-wide">
+    {% for n in neighbours %}
+      <a class="card" href="/locations/{{ n.id }}">
+        {{ location_art(n) }}
+        <div class="card-body"><strong>{{ n.name }}</strong><small>{{ n.type or '—' }}</small></div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,91 @@
+{# Composants réutilisables #}
+
+{% macro pagination(page, base, params) %}
+  {% if page.info.pages > 1 %}
+  <nav class="pagination">
+    {% set q = params | dictsort | selectattr(1) | list | urlencode %}
+    {% if page.has_prev %}
+      <a class="btn-ghost" href="{{ base }}?page={{ page.current - 1 }}{{ '&' ~ q if q }}">← Précédent</a>
+    {% endif %}
+    <span>Page {{ page.current }} / {{ page.info.pages }}</span>
+    {% if page.has_next %}
+      <a class="btn-ghost" href="{{ base }}?page={{ page.current + 1 }}{{ '&' ~ q if q }}">Suivant →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+{% endmacro %}
+
+{% macro status_dot(status) %}
+  <span class="dot dot-{{ status | lower }}"></span>{{ status | status_fr }}
+{% endmacro %}
+
+{% macro character_card(c, extra=none) %}
+  <a class="card char-card" href="/characters/{{ c.id }}">
+    <img src="{{ c.avatar }}" alt="{{ c.name }}" loading="lazy" onerror="{{ fallback() }}">
+    <div class="card-body">
+      <strong>{{ c.name }}</strong>
+      <small>{{ status_dot(c.status) }} · {{ c.species }}</small>
+      {% if extra %}<small class="extra">{{ extra }}</small>{% endif %}
+    </div>
+  </a>
+{% endmacro %}
+
+{% macro location_link(ref) %}
+  {% if ref.id %}<a class="chip" href="/locations/{{ ref.id }}">{{ ref.name }}</a>
+  {% else %}<span class="chip chip-muted">{{ ref.name }}</span>{% endif %}
+{% endmacro %}
+
+{% macro empty(msg="Aucun résultat dans cette dimension.") %}
+  <p class="empty">{{ msg }}</p>
+{% endmacro %}
+
+{% macro fallback() -%}
+this.onerror=null;this.src='/static/img/placeholder.svg'
+{%- endmacro %}
+
+{# Couverture d'épisode : image TMDB si disponible, sinon mosaïque des personnages #}
+{% macro episode_cover(ep, stills, big=false) %}
+  <div class="cover{{ ' cover-big' if big }}">
+    {% if stills.get(ep.id) %}
+      <img src="{{ stills[ep.id] }}" alt="{{ ep.name }}" loading="lazy" onerror="{{ fallback() }}">
+    {% else %}
+      <div class="mosaic">
+        {% for src in ep.cover_avatars %}<img src="{{ src }}" alt="" loading="lazy" onerror="{{ fallback() }}">{% endfor %}
+      </div>
+    {% endif %}
+    <span class="badge cover-badge">{{ ep.episode }}</span>
+  </div>
+{% endmacro %}
+
+
+{# Valeur cliquable -> liste filtrée (ex. espèce "Alien" -> /characters?species=Alien) #}
+{% macro filter_link(base, key, value, label=none) %}
+  {%- if value -%}
+    <a class="chip chip-filter" href="{{ base }}?{{ {key: value} | urlencode }}"
+       title="Voir tous les résultats avec ce critère">{{ label or value }}</a>
+  {%- else -%}<span class="muted">—</span>{%- endif -%}
+{% endmacro %}
+
+{# Puces des filtres actifs, chacune avec une croix pour la retirer #}
+{% macro active_filters(filters, base) %}
+  {% set FILTER_LABELS = {"name": "Nom", "status": "Statut", "species": "Espèce", "type": "Type",
+                          "gender": "Genre", "dimension": "Dimension", "season": "Saison"} %}
+  {% set active = filters | dictsort | selectattr(1) | list %}
+  {% if active %}
+  <div class="active-filters">
+    {% for key, value in active %}
+      {% set rest = filters | dictsort | rejectattr(0, "equalto", key) | selectattr(1) | list %}
+      <a class="chip chip-active" href="{{ base }}{{ '?' ~ (rest | urlencode) if rest }}"
+         title="Retirer ce filtre">{{ FILTER_LABELS.get(key, key) }} : {{ value }} <b>✕</b></a>
+    {% endfor %}
+    {% if active | length > 1 %}<a class="chip" href="{{ base }}">Tout effacer</a>{% endif %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{# Champs cachés : conserver les filtres hors formulaire lors d'une nouvelle recherche #}
+{% macro hidden_filters(filters, visible) %}
+  {% for key, value in filters | dictsort if value and key not in visible %}
+    <input type="hidden" name="{{ key }}" value="{{ value }}">
+  {% endfor %}
+{% endmacro %}

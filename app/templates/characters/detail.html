@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_dot, location_link, fallback, filter_link, character_card %}
+{% block title %}{{ c.name }} · Rick & Morty{% endblock %}
+{% block content %}
+<a class="back" href="/characters">← Tous les personnages</a>
+<article class="panel detail">
+  <img class="portrait" src="{{ c.avatar }}" alt="{{ c.name }}" onerror="{{ fallback() }}">
+  <div>
+    <h1>{{ c.name }}</h1>
+    <dl class="facts">
+      <dt>Statut</dt><dd>{{ filter_link('/characters', 'status', c.status, status_dot(c.status)) }}</dd>
+      <dt>Espèce</dt><dd>{{ filter_link('/characters', 'species', c.species) }}</dd>
+      {% if c.type %}<dt>Type</dt><dd>{{ filter_link('/characters', 'type', c.type) }}</dd>{% endif %}
+      <dt>Genre</dt><dd>{{ filter_link('/characters', 'gender', c.gender) }}</dd>
+      <dt>Origine</dt><dd>{{ location_link(c.origin) }}</dd>
+      <dt>Dernier lieu connu</dt><dd>{{ location_link(c.location) }}</dd>
+    </dl>
+    <p class="muted hint">Clique sur une valeur pour voir tous les personnages qui la partagent.</p>
+  </div>
+</article>
+
+<section class="panel">
+  <h2>Apparaît dans {{ episodes | length }} épisode{{ 's' if episodes | length > 1 }}</h2>
+  <div class="chips">
+    {% for ep in episodes %}
+      <a class="chip" href="/episodes/{{ ep.id }}" title="{{ ep.air_date }}">
+        <b>{{ ep.episode }}</b> {{ ep.name }}
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if co_stars %}
+<section class="panel">
+  <h2>Partage le plus d'épisodes avec</h2>
+  <div class="grid">
+    {% for other, n in co_stars %}{{ character_card(other, n ~ ' épisode' ~ ('s' if n > 1) ~ ' en commun') }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if versions %}
+<section class="panel">
+  <div class="section-head">
+    <h2>Autres versions de {{ c.name }}</h2>
+    {% if versions_count > versions | length %}
+      <a class="btn-ghost" href="/characters?{{ {'name': c.name} | urlencode }}">Voir les {{ versions_count }} →</a>
+    {% endif %}
+  </div>
+  <div class="grid">
+    {% for v in versions %}{{ character_card(v, v.location.name) }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

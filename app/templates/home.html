@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1 class="hero-title">Rick <span>&</span> Morty</h1>
+  <p class="hero-sub">Choisis ta dimension</p>
+  <div class="hero-buttons">
+    <a class="portal-btn portal-characters" href="/characters">
+      <span class="portal-icon">👽</span>Personnages
+    </a>
+    <a class="portal-btn portal-locations" href="/locations">
+      <span class="portal-icon">🪐</span>Lieux
+    </a>
+    <a class="portal-btn portal-episodes" href="/episodes">
+      <span class="portal-icon">📺</span>Épisodes
+    </a>
+  </div>
+</section>
+{% endblock %}

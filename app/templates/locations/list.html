@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pagination, empty, active_filters, hidden_filters %}
+{% block title %}Lieux · Rick & Morty{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Lieux <small>{{ page.info.count }}</small></h1>
+  <form class="filters" method="get">
+    <input type="search" name="name" value="{{ name }}" placeholder="Rechercher un lieu…">
+    <input type="search" name="dimension" value="{{ filters.dimension }}" placeholder="Dimension…">
+    {{ hidden_filters(filters, ['name', 'dimension']) }}
+    <button class="btn">OK</button>
+  </form>
+</div>
+{{ active_filters(filters, '/locations') }}
+
+{% if page.results %}
+  <div class="grid grid-wide">
+    {% for loc in page.results %}
+      <a class="card" href="/locations/{{ loc.id }}">
+        {{ location_art(loc) }}
+        <div class="card-body">
+          <strong>{{ loc.name }}</strong>
+          <small>{{ loc.type or '—' }} · {{ loc.dimension or 'Dimension inconnue' }}</small>
+          <small>{{ loc.residents | length }} résident{{ 's' if loc.residents | length > 1 }}</small>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}{{ empty() }}{% endif %}
+
+{{ pagination(page, '/locations', filters) }}
+{% endblock %}

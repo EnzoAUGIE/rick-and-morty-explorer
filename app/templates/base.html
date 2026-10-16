@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Rick & Morty Explorer{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+</head>
+<body class="theme-{{ theme }}">
+  <header class="topbar">
+    <a class="brand" href="/">Rick<span>&</span>Morty</a>
+    <nav>
+      <a href="/characters" class="{{ 'active' if theme == 'characters' }}">Personnages</a>
+      <a href="/locations"  class="{{ 'active' if theme == 'locations' }}">Lieux</a>
+      <a href="/episodes"   class="{{ 'active' if theme == 'episodes' }}">Épisodes</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>Données : <a href="https://rickandmortyapi.com" target="_blank" rel="noopener">rickandmortyapi.com</a>
+      {% if tmdb %} · Images d'épisodes : <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a>
+      (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB){% endif %}</span>
+    <button type="button" class="btn-ghost" id="quit-btn">Quitter</button>
+  </footer>
+
+  {# Clin d'œil à showExitConfirmation() de la version Java #}
+  <dialog id="quit-dialog">
+    <div data-step="ask">
+      <p>Souhaitez-vous quitter l'application ?</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-answer="yes">Oui</button>
+        <button type="button" class="btn-ghost" data-answer="no">Non</button>
+      </div>
+    </div>
+    <div data-step="yes" hidden>
+      <img src="{{ url_for('static', path='img/ricornichon.webp') }}" alt="Rick cornichon">
+      <p class="quote">Je suis Rick-ornichon !</p>
+    </div>
+    <div data-step="no" hidden>
+      <img src="{{ url_for('static', path='img/rickquibave.jpeg') }}" alt="Rick">
+      <p class="quote">Wubba Lubba Dub Dub !!!</p>
+      <button type="button" class="btn" data-close>Retour à l'application</button>
+    </div>
+  </dialog>
+  <script src="{{ url_for('static', path='js/app.js') }}"></script>
+</body>
+</html>

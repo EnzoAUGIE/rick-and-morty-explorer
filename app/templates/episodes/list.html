@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pagination, empty, episode_cover, active_filters %}
+{% block title %}Épisodes · Rick & Morty{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Épisodes <small>{{ page.info.count }}</small></h1>
+  <form class="filters" method="get">
+    <input type="search" name="name" value="{{ name }}" placeholder="Rechercher un épisode…">
+    <select name="season" onchange="this.form.submit()">
+      <option value="">Toutes saisons</option>
+      {% for s in range(1, 6) %}
+        <option value="{{ s }}" {{ 'selected' if season == s|string }}>Saison {{ s }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn">OK</button>
+  </form>
+</div>
+{{ active_filters(filters, '/episodes') }}
+
+{% if page.results %}
+  <div class="grid grid-wide">
+    {% for ep in page.results %}
+      <a class="card" href="/episodes/{{ ep.id }}">
+        {{ episode_cover(ep, stills) }}
+        <div class="card-body">
+          <strong>{{ ep.name }}</strong>
+          <small>{{ ep.air_date }} · {{ ep.characters | length }} personnages</small>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}{{ empty() }}{% endif %}
+
+{{ pagination(page, '/episodes', {'name': name, 'season': season}) }}
+{% endblock %}

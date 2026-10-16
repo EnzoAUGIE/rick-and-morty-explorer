@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import character_card, empty, episode_cover, filter_link %}
+{% block title %}{{ ep.name }} · Rick & Morty{% endblock %}
+{% block content %}
+<a class="back" href="/episodes">← Tous les épisodes</a>
+<article class="panel detail detail-wide">
+  {{ episode_cover(ep, stills, big=true) }}
+  <div>
+    <h1>{{ ep.name }}</h1>
+    <dl class="facts">
+      <dt>Code</dt><dd>{{ ep.episode }}</dd>
+      <dt>Saison</dt><dd>{{ filter_link('/episodes', 'season', ep.season, 'Saison ' ~ ep.season) }}</dd>
+      <dt>Diffusion</dt><dd>{{ ep.air_date }}</dd>
+    </dl>
+    <div class="ep-nav">
+      {% if ep.id > 1 %}<a class="btn-ghost" href="/episodes/{{ ep.id - 1 }}">← Épisode précédent</a>{% endif %}
+      {% if ep.id < total %}<a class="btn-ghost" href="/episodes/{{ ep.id + 1 }}">Épisode suivant →</a>{% endif %}
+    </div>
+  </div>
+</article>
+
+{% if season_eps | length > 1 %}
+<section class="panel">
+  <h2>Saison {{ ep.season }}</h2>
+  <div class="season-strip">
+    {% for e in season_eps %}
+      <a class="season-ep{{ ' current' if e.id == ep.id }}" href="/episodes/{{ e.id }}"
+         {{ 'aria-current="page"' if e.id == ep.id }} title="{{ e.name }}">
+        {{ episode_cover(e, stills) }}
+        <span>{{ e.name }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if locations %}
+<section class="panel">
+  <h2>Lieux liés</h2>
+  <p class="muted small">Lieux où se trouvent les personnages de cet épisode.</p>
+  <div class="grid grid-wide">
+    {% for loc in locations %}
+      <a class="card" href="/locations/{{ loc.id }}">
+        {{ location_art(loc) }}
+        <div class="card-body"><strong>{{ loc.name }}</strong><small>{{ loc.type or '—' }}</small></div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>{{ characters | length }} personnages</h2>
+  {% if characters %}
+    <div class="grid">{% for c in characters %}{{ character_card(c) }}{% endfor %}</div>
+  {% else %}{{ empty() }}{% endif %}
+</section>
+{% endblock %}
