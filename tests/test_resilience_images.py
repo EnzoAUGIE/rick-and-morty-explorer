@@ -145,3 +145,15 @@ def test_mosaic_prefers_guest_characters():
     ep = Episode(**fake_api.DATA["episode"][0])  # Pilot : 1, 2, 35, 38, 62…
     assert ep.cover_avatars[0] == "/media/character/35.jpeg"
     assert len(ep.cover_avatars) == 4
+
+
+def test_tmdb_failure_never_logs_api_key(caplog):
+    """Un échec TMDB (clé refusée, réseau) ne doit jamais écrire la clé dans les logs."""
+    import asyncio
+    secret = "SECRET-KEY-123"
+    t = TmdbClient(secret, transport=httpx.MockTransport(lambda r: httpx.Response(401, json={})))
+    ep = type("E", (), {"id": 1, "season": 1, "number": 1})()
+    with caplog.at_level("WARNING", logger="app.tmdb"):
+        assert asyncio.run(t.stills([ep])) == {}
+    assert "401" in caplog.text            # la cause reste visible
+    assert secret not in caplog.text

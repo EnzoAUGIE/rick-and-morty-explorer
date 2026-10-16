@@ -43,7 +43,10 @@ class TmdbClient:
                 if ep.get("still_path"):
                     stills[ep["episode_number"]] = IMG_BASE + ep["still_path"]
         except (httpx.HTTPError, ValueError) as exc:
-            log.warning("TMDB saison %s indisponible (%s) : mosaïque utilisée", season, exc)
+            # pas str(exc) : le message d'httpx contient l'URL, donc la clé api_key
+            reason = (f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
+                      else type(exc).__name__)
+            log.warning("TMDB saison %s indisponible (%s) : mosaïque utilisée", season, reason)
             return {}  # non mis en cache -> on réessaiera plus tard
         self._seasons[season] = stills
         return stills
