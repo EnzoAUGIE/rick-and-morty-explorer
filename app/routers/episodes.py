@@ -25,7 +25,7 @@ async def list_episodes(
         request, "episodes/list.html",
         {"theme": "episodes", "page": data, "name": name, "season": season,
          "filters": {"name": name, "season": season},
-         "stills": stills, "tmdb": tmdb.enabled},
+         "stills": stills, "tmdb": bool(stills)},
     )
 
 
@@ -48,5 +48,5 @@ async def episode_detail(
         request, "episodes/detail.html",
         {"theme": "episodes", "ep": episode, "characters": characters,
          "locations": locations, "total": total, "season_eps": season_eps,
-         "stills": stills, "tmdb": tmdb.enabled},
+         "stills": stills, "tmdb": bool(stills)},
     )

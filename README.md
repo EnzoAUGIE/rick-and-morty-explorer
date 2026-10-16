@@ -85,6 +85,8 @@ valeur exacte. `species=Human` ramène donc aussi les `Humanoid`. L'API ne propo
 - **Nouvelles tentatives** sur 429 / 5xx / timeout : 3 essais de plus, attente 0,5 s → 1 s → 2 s,
   en respectant l'en-tête `Retry-After`. Chaque essai est écrit dans le terminal
   (`WARNING app.client - API /character -> HTTP 429, nouvel essai 1/3…`) : tu vois la vraie cause.
+- **Cache disque des réponses JSON** (`.cache/api/`, 7 jours, écriture atomique) : une page déjà visitée
+  ne rappelle pas l'API, même après redémarrage.
 - **Cache périmé en secours** : si l'API tombe, on ressert la dernière réponse connue.
 - **Avatars en cache disque** (`.cache/avatars/`) : téléchargés une seule fois par notre serveur,
   au lieu de ~20 requêtes du navigateur vers l'API à chaque page. Si un avatar échoue :
@@ -109,6 +111,7 @@ uvicorn app.main:app --reload
 
 | Variable | Défaut | Rôle |
 |---|---|---|
+| `RM_DISK_CACHE_TTL` | 604800 | durée de vie (s) du cache disque des réponses API |
 | `RM_API_RETRIES` | 3 | nouvelles tentatives par requête |
 | `RM_API_BACKOFF` | 0.5 | première attente (s), doublée à chaque essai |
 | `RM_HTTP_TIMEOUT` | 10 | timeout (s) |

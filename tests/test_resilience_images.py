@@ -157,3 +157,115 @@ def test_tmdb_failure_never_logs_api_key(caplog):
         assert asyncio.run(t.stills([ep])) == {}
     assert "401" in caplog.text            # la cause reste visible
     assert secret not in caplog.text
+
+
+# ---------- cache disque des réponses API
+def _app(**opts):
+    return create_app(transport=fake_api.transport, client_options={"backoff": 0, **opts},
+                      tmdb=TmdbClient(""))
+
+
+def test_visited_page_makes_no_api_call_after_restart(tmp_cache):
+    fake_api.calls.clear()
+    with TestClient(_app()) as c:
+        assert c.get("/episodes/3").status_code == 200
+    assert fake_api.calls
+    fake_api.calls.clear()
+    with TestClient(_app()) as c:  # "redémarrage" : nouveau client, mémoire vide
+        assert c.get("/episodes/3").status_code == 200
+    assert fake_api.calls == []
+
+
+def test_disk_cache_expires_after_ttl(tmp_cache):
+    fake_api.calls.clear()
+    with TestClient(_app(disk_ttl=0)) as c:
+        c.get("/characters")
+    fake_api.calls.clear()
+    with TestClient(_app(disk_ttl=0)) as c:
+        c.get("/characters")
+    assert fake_api.calls  # périmé -> nouvel appel
+
+
+def test_stale_disk_cache_used_when_api_down(tmp_cache):
+    import asyncio
+
+    async def scenario():
+        cl = RickMortyClient(transport=fake_api.transport, ttl=0, disk_ttl=0, backoff=0)
+        first = await cl.get("character", 1)
+        await cl.aclose()
+        down = httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("off")))
+        cl = RickMortyClient(transport=down, ttl=0, disk_ttl=0, backoff=0)
+        again = await cl.get("character", 1)  # redémarrage + API en panne + disque périmé
+        await cl.aclose()
+        return first, again
+
+    first, again = asyncio.run(scenario())
+    assert first.name == again.name == "Rick Sanchez"
+
+
+def test_disk_cache_written_atomically_and_corruption_ignored(tmp_cache):
+    with TestClient(_app()) as c:
+        c.get("/characters")
+    files = list((tmp_cache / "api").iterdir())
+    assert files and all(f.suffix == ".json" for f in files)  # pas de fichier temporaire
+    for f in files:
+        f.write_text("{pas du json")
+    fake_api.calls.clear()
+    with TestClient(_app()) as c:
+        assert c.get("/characters").status_code == 200
+    assert fake_api.calls  # cache illisible -> refetch, sans erreur
+
+
+def test_not_found_is_not_cached_on_disk(tmp_cache):
+    with TestClient(_app()) as c:
+        assert c.get("/characters/99999").status_code == 404
+    assert not list((tmp_cache / "api").glob("*.json"))
+
+
+# ---------- attribution TMDB conditionnelle
+def test_tmdb_attribution_hidden_when_tmdb_returns_no_image():
+    broken = TmdbClient("k", transport=httpx.MockTransport(lambda r: httpx.Response(401)))
+    with TestClient(create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                               tmdb=broken)) as c:
+        assert "TMDB" not in c.get("/episodes").text
+
+
+def test_tmdb_attribution_hidden_on_pages_without_episode_images():
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                     tmdb=fake_tmdb())
+    with TestClient(app) as c:
+        assert "TMDB" not in c.get("/characters").text
+
+
+def test_api_cache_never_contains_tmdb_key(tmp_cache):
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                     tmdb=fake_tmdb())
+    with TestClient(app) as c:
+        c.get("/episodes")
+        c.get("/episodes/3")
+    files = [f for f in tmp_cache.rglob("*") if f.is_file()]
+    assert files and all(b"api_key" not in f.read_bytes() for f in files)
+
+
+def test_tmdb_attribution_shown_when_an_image_is_displayed():
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                     tmdb=fake_tmdb())
+    with TestClient(app) as c:
+        assert "themoviedb.org" in c.get("/episodes").text
+
+
+def test_failed_disk_write_leaves_no_tmp_file(tmp_cache, monkeypatch):
+    import asyncio
+
+    def boom(*a, **k):
+        raise OSError("disque plein")
+    monkeypatch.setattr("app.client.os.replace", boom)
+
+    async def scenario():
+        cl = RickMortyClient(transport=fake_api.transport, backoff=0)
+        char = await cl.get("character", 1)  # la page s'affiche malgré l'échec d'écriture
+        await cl.aclose()
+        return char
+
+    assert asyncio.run(scenario()).name == "Rick Sanchez"
+    assert not list((tmp_cache / "api").glob("*"))
