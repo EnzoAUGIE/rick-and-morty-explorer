@@ -6,15 +6,19 @@ Ordre du catalogue : tri par (saison, numéro).
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import time
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from . import config
 from .client import ApiUnavailableError, NotFoundError, RickMortyClient
 from .models import Episode, Guest, Page
 from .tmdb import TmdbClient, TmdbEntry
 
+log = logging.getLogger("app.catalogue")
 PAGE_SIZE = 20
 # Liste fermée : « Aqua (Rick) » est un vrai nom de personnage, on ne retire pas toute parenthèse
 CREDIT_NOTES = re.compile(r"\((?:voice|uncredited|archive footage|credit only)\)", re.I)
@@ -69,6 +73,7 @@ class _State:
     by_id: dict[int, Episode]
     rm_by_code: dict[str, Episode]
     built_at: float
+    complete: bool  # False : mode dégradé (TMDB absent ou liste R&M partielle)
 
 
 def _complementary(entry: TmdbEntry) -> Episode:
@@ -86,18 +91,50 @@ class Catalogue:
     def __init__(self, client: RickMortyClient, tmdb: TmdbClient) -> None:
         self._client, self._tmdb = client, tmdb
         self._state: _State | None = None
+        self._lock = asyncio.Lock()
         self._character_ids: dict[str, int | None] = {}  # nom plié -> fiche (None : aucune)
 
+    def _expired(self) -> bool:
+        """Un catalogue complet est reconstruit après CACHE_TTL_SECONDS ; un catalogue
+        dégradé plus tôt (CATALOGUE_RETRY_SECONDS), pour retrouver les sources manquantes."""
+        st = self._state
+        if st is None:
+            return True
+        limit = config.CACHE_TTL_SECONDS if st.complete else config.CATALOGUE_RETRY_SECONDS
+        return time.monotonic() - st.built_at >= limit
+
     async def _ensure(self) -> _State:
-        if self._state is None:
-            self._state = await self._build()
+        if self._expired():
+            async with self._lock:  # les requêtes concurrentes attendent la même construction
+                if self._expired():
+                    await self._rebuild()
+        assert self._state is not None
         return self._state
+
+    async def _rebuild(self) -> None:
+        try:
+            self._state = await self._build()
+        except ApiUnavailableError:
+            if self._state is None:
+                raise  # construction à froid sans aucune donnée R&M : 503
+            # reconstruction échouée : on garde l'ancien état et on réessaiera plus tard
+            self._state = replace(self._state, complete=False, built_at=time.monotonic())
 
     async def _build(self) -> _State:
         episodes: list[Episode] = []
+        rm_complete = True
         page = 1
         while True:
-            data = await self._client.list("episode", page)
+            try:
+                data = await self._client.list("episode", page)
+            except ApiUnavailableError:
+                if page == 1:
+                    raise
+                # une liste R&M partielle ne doit pas laisser TMDB remplacer des codes servis par R&M
+                log.warning("liste R&M incomplète (page %d indisponible) : aucun épisode complémentaire",
+                            page)
+                rm_complete = False
+                break
             episodes.extend(data.results)
             if not data.has_next:
                 break
@@ -107,12 +144,14 @@ class Catalogue:
         episodes = [e.model_copy(update={"image": by_code[e.episode].still})
                     if e.episode in by_code and by_code[e.episode].still else e
                     for e in episodes]
-        served = {e.episode for e in episodes}
-        episodes += [_complementary(entry) for code, entry in by_code.items()
-                     if code not in served and 1 <= entry.number <= 99]
+        if rm_complete:
+            served = {e.episode for e in episodes}
+            episodes += [_complementary(entry) for code, entry in by_code.items()
+                         if code not in served and 1 <= entry.number <= 99]
         episodes.sort(key=lambda e: (e.season, e.number))
         return _State(episodes, {e.id: e for e in episodes},
-                      {e.episode: e for e in episodes if e.source == "rm"}, time.monotonic())
+                      {e.episode: e for e in episodes if e.source == "rm"}, time.monotonic(),
+                      complete=rm_complete and listing.complete)
 
     async def list(self, page: int = 1, *, name: str = "",
                    season: int | None = None) -> Page[Episode]:

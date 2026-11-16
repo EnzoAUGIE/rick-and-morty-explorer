@@ -21,6 +21,13 @@ def no_env_tmdb_key(monkeypatch):
     monkeypatch.setattr(config, "TMDB_API_KEY", "")
 
 
+@pytest.fixture(autouse=True)
+def clean_call_logs():
+    """Journaux des requêtes simulées vides au début de chaque test."""
+    fake_api.calls.clear()
+    fake_tmdb.calls.clear()
+
+
 @pytest.fixture
 def client():
     fake_api.calls.clear()

@@ -1,4 +1,5 @@
 """Catalogue des épisodes (R&M + épisodes complémentaires), testé au seam applicatif."""
+import asyncio
 import copy
 import re
 
@@ -6,6 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app import config
 from app.main import create_app
 from app.tmdb import TmdbClient
 
@@ -344,3 +346,128 @@ def test_api_key_never_in_logs_on_tmdb_failure(failure, caplog):
             c.get("/episodes")
     assert fake_tmdb.KEY not in caplog.text
     assert all(fake_tmdb.KEY not in rec.getMessage() for rec in caplog.records)
+
+
+# ---------- résilience de la construction à froid et concurrence
+def _always_429(request):
+    return httpx.Response(429, headers={"retry-after": "0"})
+
+
+def test_cold_build_survives_429_and_outage(tmp_cache):
+    with _start(fake_tmdb.client(disk_ttl=0)) as c:  # un premier app sain remplit les caches
+        c.get("/episodes")
+        c.get("/episodes/601")
+    app = create_app(transport=httpx.MockTransport(_always_429),
+                     client_options={"backoff": 0, "retries": 1, "disk_ttl": 0},
+                     tmdb=fake_tmdb.client(disk_ttl=0, fail={"show": 429, 1: "down",
+                                                              6: 429, 7: "down"}))
+    with TestClient(app) as c:
+        r = c.get("/episodes")
+        assert r.status_code == 200 and "Pilot" in r.text and "<small>23</small>" in r.text
+        assert c.get("/episodes/601").status_code == 200
+
+
+def test_cold_build_tmdb_season_429_without_cache(caplog):
+    with caplog.at_level("WARNING"):
+        with _start(fake_tmdb.client(fail={6: 429})) as c:
+            r = c.get("/episodes")
+    assert r.status_code == 200 and "<small>13</small>" in r.text
+    assert 'href="/episodes/601"' not in r.text
+    assert "HTTP 429" in caplog.text and fake_tmdb.KEY not in caplog.text
+
+
+def test_cold_build_partial_rm_pages_adds_no_complementary_episode(monkeypatch):
+    monkeypatch.setattr(fake_api, "LIMIT", 5)
+
+    def handler(request):
+        if request.url.path == "/api/episode" and request.url.params.get("page") == "2":
+            return httpx.Response(429, headers={"retry-after": "0"})
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler),
+                     client_options={"backoff": 0, "retries": 1}, tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        r = c.get("/episodes")
+    assert r.status_code == 200 and "<small>5</small>" in r.text
+    assert "S01E01" in r.text and "S01E05" in r.text and "S01E06" not in r.text
+    assert 'href="/episodes/6' not in r.text and "source TMDB" not in r.text
+    assert "https://image.tmdb.org/t/p/w500/s1e1.jpg" in r.text
+
+
+def test_cold_build_rm_down_without_cache_gives_503():
+    def down(request):
+        raise httpx.ConnectError("offline")
+    app = create_app(transport=httpx.MockTransport(down), client_options={"backoff": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        r = c.get("/episodes")
+    assert r.status_code == 503 and "ConnectError" in r.text
+
+
+def test_incomplete_catalogue_is_rebuilt_later(monkeypatch):
+    monkeypatch.setattr(config, "CATALOGUE_RETRY_SECONDS", 0)
+    fail = {6: 429}
+    with _start(fake_tmdb.client(fail=fail)) as c:
+        assert 'href="/episodes/601"' not in c.get("/episodes").text
+        fail.clear()
+        fake_tmdb.calls.clear()
+        assert 'href="/episodes/601"' in c.get("/episodes").text
+    assert not any(p.endswith("/season/1") for p in fake_tmdb.calls)  # servi par le cache disque
+
+
+def test_complete_catalogue_not_rebuilt_within_ttl(full_client):
+    full_client.get("/episodes/3")
+    fake_api.calls.clear()
+    fake_tmdb.calls.clear()
+    for _ in range(3):
+        full_client.get("/episodes")
+    full_client.get("/episodes/3")
+    assert fake_api.calls == [] and fake_tmdb.calls == []
+
+
+def test_complete_catalogue_is_rebuilt_after_ttl_and_keeps_old_state_on_failure(monkeypatch):
+    monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)
+    state = {"down": False}
+
+    def handler(request):
+        if state["down"]:
+            raise httpx.ConnectError("offline")
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler),
+                     client_options={"backoff": 0, "ttl": 0, "disk_ttl": 0}, tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        assert "<small>23</small>" in c.get("/episodes").text
+        state["down"] = True  # la reconstruction échoue : l'ancien catalogue reste servi
+        r = c.get("/episodes")
+        assert r.status_code == 200 and "<small>23</small>" in r.text
+
+
+def test_cold_cost_is_bounded(tmp_cache):
+    with _start(fake_tmdb.client()) as c:
+        c.get("/episodes")
+    assert sum("/api/episode" in call for call in fake_api.calls) == 1
+    assert [p.split("60625")[1] for p in fake_tmdb.calls] == ["", "/season/1", "/season/6", "/season/7"]
+    fake_api.calls.clear()
+    fake_tmdb.calls.clear()
+    with _start(fake_tmdb.client()) as c:  # redémarrage : tout vient des caches disque
+        c.get("/episodes")
+    assert fake_api.calls == [] and fake_tmdb.calls == []
+
+
+def test_concurrent_cold_requests_build_the_catalogue_once():
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                     tmdb=fake_tmdb.client(delay=0.01))
+
+    async def scenario():
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                         base_url="http://test") as http:
+                return await asyncio.gather(*(http.get("/episodes") for _ in range(5)))
+
+    fake_api.calls.clear()
+    fake_tmdb.calls.clear()
+    responses = asyncio.run(scenario())
+    assert all(r.status_code == 200 and "<small>23</small>" in r.text for r in responses)
+    assert len(fake_tmdb.calls) == len(set(fake_tmdb.calls)) == 4
+    assert sum("/api/episode?page=1" in c for c in fake_api.calls) == 1
