@@ -2,6 +2,7 @@
 import copy
 import re
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -189,3 +190,67 @@ def test_episode_added_by_rm_later_replaces_complementary(full_client, monkeypat
 def test_undecodable_or_unknown_ids_give_404(full_client):
     for episode_id in (600, 199, 700, 1000):
         assert full_client.get(f"/episodes/{episode_id}", follow_redirects=False).status_code == 404
+
+
+# ---------- invités : normalisation et correspondance avec les fiches
+def _character_searches() -> list[str]:
+    return [c for c in fake_api.calls if "/api/character?" in c]
+
+
+def test_guests_are_linked_to_characters(full_client):
+    html = full_client.get("/episodes/601").text
+    for cid in (1, 4, 7, 3, 2, 11, 22):
+        assert f'href="/characters/{cid}"' in html
+    assert 'href="/characters/38"' not in html and 'href="/characters/39"' not in html
+    assert html.count('href="/characters/1"') == 1  # doublon (voice) / (uncredited) supprimé
+
+
+def test_unmatched_guest_stays_plain_text_and_mentions_are_removed(full_client):
+    html = full_client.get("/episodes/601").text
+    assert '<span class="chip chip-muted">Birdperson</span>' in html
+    assert "(voice)" not in html and "(uncredited)" not in html
+    assert ">Aqua (Rick)</a>" in html  # parenthèse hors liste fermée : conservée
+    assert re.search(r'href="/characters/\d+">Summer Smith</a>', html)
+    assert re.search(r'href="/characters/\d+">Morty Smith</a>', html)
+
+
+def test_guest_resolution_is_lazy_and_memorised(full_client):
+    full_client.get("/episodes")
+    assert _character_searches() == []  # la liste ne résout aucun invité
+    full_client.get("/episodes/601")
+    first = len(_character_searches())
+    assert 0 < first <= 8  # au plus une requête par nom distinct
+    full_client.get("/episodes/601")
+    assert len(_character_searches()) == first
+
+
+def test_resolved_guests_survive_restart_with_only_unmatched_names_requested():
+    def start():
+        return TestClient(create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                                     tmdb=fake_tmdb.client()))
+    with start() as c:
+        assert 'href="/characters/11"' in c.get("/episodes/601").text
+    fake_api.calls.clear()
+    with start() as c:
+        assert 'href="/characters/11"' in c.get("/episodes/601").text
+    # les fiches trouvées viennent du cache disque ; une recherche vide est un 404, jamais
+    # mis en cache (test_not_found_is_not_cached_on_disk) : seul « Birdperson » est redemandé
+    assert [c for c in fake_api.calls if "Birdperson" not in c] == []
+
+
+def test_rm_outage_during_guest_resolution_gives_plain_text_then_recovers():
+    state = {"down": True}
+
+    def handler(request):
+        if state["down"] and request.url.path == "/api/character":
+            return httpx.Response(503)
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler),
+                     client_options={"backoff": 0}, tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        r = c.get("/episodes/601")
+        assert r.status_code == 200 and '<span class="chip chip-muted">Rick Sanchez</span>' in r.text
+        assert 'href="/characters/1"' not in r.text
+        state["down"] = False  # la panne n'a pas été mémorisée
+        assert 'href="/characters/1"' in c.get("/episodes/601").text

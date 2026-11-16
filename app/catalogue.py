@@ -6,14 +6,38 @@ Ordre du catalogue : tri par (saison, numéro).
 """
 from __future__ import annotations
 
+import re
 import time
+import unicodedata
 from dataclasses import dataclass
 
-from .client import NotFoundError, RickMortyClient
+from .client import ApiUnavailableError, NotFoundError, RickMortyClient
 from .models import Episode, Guest, Page
 from .tmdb import TmdbClient, TmdbEntry
 
 PAGE_SIZE = 20
+# Liste fermée : « Aqua (Rick) » est un vrai nom de personnage, on ne retire pas toute parenthèse
+CREDIT_NOTES = re.compile(r"\((?:voice|uncredited|archive footage|credit only)\)", re.I)
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def _fold(text: str) -> str:
+    """Forme de comparaison : sans accents, sans casse, espaces fusionnés."""
+    return " ".join(_strip_accents(text).casefold().split())
+
+
+def _split_guests(raw: list[str]) -> list[str]:
+    """Noms de personnages : mentions de crédit retirées, « A / B » séparé, doublons supprimés."""
+    names: dict[str, str] = {}
+    for entry in raw:
+        for part in CREDIT_NOTES.sub("", entry).split("/"):
+            name = " ".join(part.split())
+            if name:
+                names.setdefault(_fold(name), name)
+    return list(names.values())
 
 
 class EpisodeMoved(Exception):
@@ -52,7 +76,7 @@ def _complementary(entry: TmdbEntry) -> Episode:
     return Episode(
         id=entry.season * 100 + entry.number, source="tmdb", episode=entry.code,
         name=entry.name or entry.code, air_date=entry.air_date, summary=entry.overview,
-        image=entry.still, characters=[], guests=[Guest(name=g) for g in entry.guests])
+        image=entry.still, characters=[], guests=[Guest(name=g) for g in _split_guests(entry.guests)])
 
 
 class Catalogue:
@@ -62,6 +86,7 @@ class Catalogue:
     def __init__(self, client: RickMortyClient, tmdb: TmdbClient) -> None:
         self._client, self._tmdb = client, tmdb
         self._state: _State | None = None
+        self._character_ids: dict[str, int | None] = {}  # nom plié -> fiche (None : aucune)
 
     async def _ensure(self) -> _State:
         if self._state is None:
@@ -111,11 +136,38 @@ class Catalogue:
         """Lève NotFoundError (inconnu) ou EpisodeMoved (code désormais servi par R&M)."""
         state = await self._ensure()
         if episode_id in state.by_id:
-            return state.by_id[episode_id]
+            return await self._with_linked_guests(state.by_id[episode_id])
         code = _code_of(episode_id)
         if code in state.rm_by_code:
             raise EpisodeMoved(state.rm_by_code[code].id)
         raise NotFoundError(f"/episode/{episode_id}")
+
+    async def _with_linked_guests(self, ep: Episode) -> Episode:
+        """Lie les invités d'un épisode complémentaire à leur fiche, une requête par nom au plus.
+
+        Les requêtes sont séquentielles (429). Si R&M ne répond pas, les noms restants restent
+        en texte simple et ne sont pas mémorisés : un prochain appel réessaie.
+        """
+        if ep.source != "tmdb":
+            return ep
+        guests: list[Guest] = []
+        available = True
+        for g in ep.guests:
+            key = _fold(g.name)
+            if key not in self._character_ids and available:
+                try:
+                    self._character_ids[key] = await self._find_character(g.name)
+                except ApiUnavailableError:
+                    available = False
+            guests.append(Guest(name=g.name, character_id=self._character_ids.get(key)))
+        return ep.model_copy(update={"guests": guests})
+
+    async def _find_character(self, name: str) -> int | None:
+        """Fiche au nom exact (accents et casse ignorés) sur la page 1 de la recherche ;
+        en cas d'homonymes, l'id le plus bas."""
+        page = await self._client.list("character", 1, name=_strip_accents(name))
+        ids = [c.id for c in page.results if _fold(c.name) == _fold(name)]
+        return min(ids) if ids else None
 
     async def same_season(self, ep: Episode) -> list[Episode]:
         if not ep.season:
