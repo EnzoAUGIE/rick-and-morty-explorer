@@ -3,7 +3,7 @@
 Rick & Morty Explorer : FastAPI + Jinja2, données de rickandmortyapi.com (voir README.md).
 
 ### Commandes
-- Tests : `pytest -q` (100 % hors ligne, via `tests/fake_api.py` ; aucun test ne doit toucher le réseau)
+- Tests : `python -m pytest -q` (Python 3.12, venv `.venv`) (100 % hors ligne, via `tests/fake_api.py` ; aucun test ne doit toucher le réseau)
 - Serveur : `uvicorn app.main:app --reload`
 
 ### Règles
@@ -25,3 +25,9 @@ Vocabulaire par défaut : `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context : un `CONTEXT.md` et `docs/adr/` à la racine. See `docs/agents/domain.md`.
+
+## Équipe d'agents (claude-dev-squad)
+
+- Abonnement : Pro
+- Fichiers de coordination (ignorés par git) : `TEAM.md` (chef-de-projet), `PLAN.md` (architecte), `TEST_REPORT.md` (testeur), `REVIEW.md` (relecteur).
+- Interdits : `git push`, merger sur `main`, supprimer ou affaiblir un test, lire `.env`, afficher `TMDB_API_KEY`.

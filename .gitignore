@@ -4,3 +4,12 @@ __pycache__/
 *.pyc
 .DS_Store
 .cache/
+/TEAM.md
+/PLAN.md
+/TEST_REPORT.md
+/REVIEW.md
+.claude/worktrees/
+.claude/logs/
+.claude/settings.local.json
+.coverage
+.agents/
