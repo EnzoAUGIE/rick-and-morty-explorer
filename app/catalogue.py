@@ -93,6 +93,7 @@ class Catalogue:
         self._state: _State | None = None
         self._lock = asyncio.Lock()
         self._character_ids: dict[str, int | None] = {}  # nom plié -> fiche (None : aucune)
+        self._searching: dict[str, asyncio.Task[int | None]] = {}  # recherches en cours
 
     def _expired(self) -> bool:
         """Un catalogue complet est reconstruit après CACHE_TTL_SECONDS ; un catalogue
@@ -195,11 +196,25 @@ class Catalogue:
             key = _fold(g.name)
             if key not in self._character_ids and available:
                 try:
-                    self._character_ids[key] = await self._find_character(g.name)
+                    await self._search_once(key, g.name)
                 except ApiUnavailableError:
                     available = False
             guests.append(Guest(name=g.name, character_id=self._character_ids.get(key)))
         return ep.model_copy(update={"guests": guests})
+
+    async def _search_once(self, key: str, name: str) -> None:
+        """Mémorise la fiche de `name`. Des visites simultanées partagent une seule recherche ;
+        si elle échoue, rien n'est mémorisé et le nom pourra être cherché de nouveau."""
+        task = self._searching.get(key)
+        if task is None:
+            task = asyncio.ensure_future(self._find_and_remember(key, name))
+            self._searching[key] = task
+            task.add_done_callback(lambda _: self._searching.pop(key, None))
+        await asyncio.shield(task)
+
+    async def _find_and_remember(self, key: str, name: str) -> int | None:
+        self._character_ids[key] = found = await self._find_character(name)
+        return found
 
     async def _find_character(self, name: str) -> int | None:
         """Fiche au nom exact (accents et casse ignorés) sur la page 1 de la recherche ;
