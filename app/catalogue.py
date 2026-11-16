@@ -113,13 +113,22 @@ class Catalogue:
         return self._state
 
     async def _rebuild(self) -> None:
+        old = self._state
         try:
-            self._state = await self._build()
+            new = await self._build()
         except ApiUnavailableError:
-            if self._state is None:
+            if old is None:
                 raise  # construction à froid sans aucune donnée R&M : 503
-            # reconstruction échouée : on garde l'ancien état et on réessaiera plus tard
-            self._state = replace(self._state, complete=False, built_at=time.monotonic())
+            new = None
+        else:
+            if old is not None and old.complete and not new.complete:
+                log.warning("reconstruction du catalogue plus incomplète que l'état actuel : "
+                            "ancien catalogue conservé")
+                new = None
+        if new is not None:
+            self._state = new
+        else:  # reconstruction échouée : on garde l'ancien état et on réessaiera plus tard
+            self._state = replace(old, complete=False, built_at=time.monotonic())
 
     async def _build(self) -> _State:
         episodes: list[Episode] = []
