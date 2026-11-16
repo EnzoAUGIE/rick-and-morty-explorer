@@ -376,3 +376,72 @@ def test_concurrent_visits_during_outage_stay_plain_text_then_recover_and_search
 def test_season_filter_accepts_only_ascii_digits(full_client, value, expected):
     r = full_client.get("/episodes", params={"season": value})
     assert r.status_code == 200 and expected in r.text
+
+
+# ---------- boucle 3 : échéance de réessai (retry_soon) et complétude des données
+def _page2_flaky(state):
+    def handler(request):
+        if state["page2_down"] and request.url.path == "/api/episode" \
+                and request.url.params.get("page") == "2":
+            return httpx.Response(429, headers={"retry-after": "0"})
+        return fake_api.handler(request)
+    return httpx.MockTransport(handler)
+
+
+def test_refused_rebuild_waits_for_retry_delay_instead_of_looping(monkeypatch):
+    monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)
+    monkeypatch.setattr(config, "CATALOGUE_RETRY_SECONDS", 3600)
+    state = {"page2_down": False}
+    app = create_app(transport=_page2_flaky(state),
+                     client_options={"backoff": 0, "retries": 1, "ttl": 0, "disk_ttl": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        assert "<small>23</small>" in c.get("/episodes").text
+        monkeypatch.setattr(fake_api, "LIMIT", 5)
+        state["page2_down"] = True
+        assert "<small>23</small>" in c.get("/episodes").text  # refusée : ancien état gardé
+        fake_api.calls.clear()
+        fake_tmdb.calls.clear()
+        for path in ("/episodes", "/episodes?page=2", "/episodes/601", "/episodes/3"):
+            assert c.get(path).status_code == 200
+        assert not any("/api/episode" in call for call in fake_api.calls)  # pas de boucle
+        assert fake_tmdb.calls == []
+
+
+def test_retry_flag_is_cleared_after_a_successful_rebuild(monkeypatch):
+    """Refus, puis R&M réparé : le nouvel état est complet et retombe sur le TTL normal
+    (plus de reconstruction à chaque requête)."""
+    monkeypatch.setattr(config, "CATALOGUE_RETRY_SECONDS", 0)
+    monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 3600)
+    state = {"page2_down": False}
+    app = create_app(transport=_page2_flaky(state),
+                     client_options={"backoff": 0, "retries": 1, "ttl": 0, "disk_ttl": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        assert "<small>23</small>" in c.get("/episodes").text
+        # TTL 3600 : on force une reconstruction refusée en expirant l'état via le délai de réessai
+        monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)
+        monkeypatch.setattr(fake_api, "LIMIT", 5)
+        state["page2_down"] = True
+        assert "<small>23</small>" in c.get("/episodes").text      # refusée
+        state["page2_down"] = False
+        repaired = c.get("/episodes").text  # R&M répond de nouveau : reconstruction acceptée
+        assert "<small>23</small>" in repaired and "Page 1 / 2" in repaired
+        monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 3600)
+        fake_api.calls.clear()
+        for _ in range(3):
+            c.get("/episodes")
+        assert not any("/api/episode" in call for call in fake_api.calls)
+
+
+def test_degraded_old_state_is_replaced_by_a_complete_one_after_refusals(monkeypatch):
+    monkeypatch.setattr(config, "CATALOGUE_RETRY_SECONDS", 0)
+    monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)
+    fail = {6: 429}
+    with _start(fake_tmdb.client(fail=fail), ttl=0, disk_ttl=0) as c:
+        for _ in range(2):
+            assert "<small>13</small>" in c.get("/episodes").text  # incomplet, stable
+        fail.clear()
+        html = c.get("/episodes").text
+        assert "<small>23</small>" in html and 'href="/episodes/601"' in html
+        assert "<small>23</small>" in c.get("/episodes").text
