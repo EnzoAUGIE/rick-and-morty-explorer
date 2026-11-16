@@ -73,7 +73,8 @@ class _State:
     by_id: dict[int, Episode]
     rm_by_code: dict[str, Episode]
     built_at: float
-    complete: bool  # False : mode dégradé (TMDB absent ou liste R&M partielle)
+    complete: bool  # données complètes ? False : mode dégradé (TMDB en échec, liste R&M partielle)
+    retry_soon: bool = False  # échéance : une reconstruction a été refusée ou a échoué
 
 
 def _complementary(entry: TmdbEntry) -> Episode:
@@ -101,7 +102,8 @@ class Catalogue:
         st = self._state
         if st is None:
             return True
-        limit = config.CACHE_TTL_SECONDS if st.complete else config.CATALOGUE_RETRY_SECONDS
+        limit = (config.CACHE_TTL_SECONDS if st.complete and not st.retry_soon
+                 else config.CATALOGUE_RETRY_SECONDS)
         return time.monotonic() - st.built_at >= limit
 
     async def _ensure(self) -> _State:
@@ -128,7 +130,8 @@ class Catalogue:
         if new is not None:
             self._state = new
         else:  # reconstruction échouée : on garde l'ancien état et on réessaiera plus tard
-            self._state = replace(old, complete=False, built_at=time.monotonic())
+            # la complétude des données de l'ancien état n'est pas dégradée : seule l'échéance change
+            self._state = replace(old, retry_soon=True, built_at=time.monotonic())
 
     async def _build(self) -> _State:
         episodes: list[Episode] = []
