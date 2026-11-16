@@ -1,0 +1,295 @@
+{
+ "show": {
+  "id": 60625,
+  "name": "Rick et Morty",
+  "seasons": [
+   {
+    "season_number": 0,
+    "episode_count": 1
+   },
+   {
+    "season_number": 1,
+    "episode_count": 10
+   },
+   {
+    "season_number": 6,
+    "episode_count": 10
+   },
+   {
+    "season_number": 7,
+    "episode_count": 3
+   }
+  ]
+ },
+ "seasons": {
+  "0": {
+   "episodes": [
+    {
+     "season_number": 0,
+     "episode_number": 1,
+     "name": "Spécial",
+     "air_date": "2020-01-01",
+     "overview": "Un spécial.",
+     "still_path": "/s0e1.jpg",
+     "guest_stars": []
+    }
+   ]
+  },
+  "1": {
+   "episodes": [
+    {
+     "season_number": 1,
+     "episode_number": 1,
+     "name": "Pilote",
+     "air_date": "2013-12-02",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e1.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 2,
+     "name": "Chien tondeuse",
+     "air_date": "2013-12-03",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e2.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 3,
+     "name": "Parc Anatomie",
+     "air_date": "2013-12-04",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e3.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 4,
+     "name": "M. Night Shaym-Aliens !",
+     "air_date": "2013-12-05",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e4.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 5,
+     "name": "Meeseeks et Destruction",
+     "air_date": "2013-12-06",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e5.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 6,
+     "name": "Potion Rick n°9",
+     "air_date": "2013-12-07",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e6.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 7,
+     "name": "Gazorpazorp",
+     "air_date": "2013-12-08",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e7.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 8,
+     "name": "Rixty Minutes",
+     "air_date": "2013-12-09",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e8.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 9,
+     "name": "Quelque chose de Rick arrive",
+     "air_date": "2013-12-10",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e9.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 1,
+     "episode_number": 10,
+     "name": "Rencontres rapprochées",
+     "air_date": "2013-12-11",
+     "overview": "Résumé TMDB",
+     "still_path": "/s1e10.jpg",
+     "guest_stars": []
+    }
+   ]
+  },
+  "6": {
+   "episodes": [
+    {
+     "season_number": 6,
+     "episode_number": 1,
+     "name": "Solaricks",
+     "air_date": "2022-09-04",
+     "overview": "Rick et Morty explorent un monde solaire.",
+     "still_path": "/s6e1.jpg",
+     "guest_stars": [
+      {
+       "name": "Acteur",
+       "character": "Rick Sanchez (voice)"
+      },
+      {
+       "name": "Acteur",
+       "character": "Beth Smith"
+      },
+      {
+       "name": "Acteur",
+       "character": "Abradolf Lincler (uncredited)"
+      },
+      {
+       "name": "Acteur",
+       "character": "Summer Smith / Morty Smith"
+      },
+      {
+       "name": "Acteur",
+       "character": "ALBERT ÉINSTEIN"
+      },
+      {
+       "name": "Acteur",
+       "character": "Aqua (Rick)"
+      },
+      {
+       "name": "Acteur",
+       "character": "Birdperson (uncredited)"
+      },
+      {
+       "name": "Acteur",
+       "character": ""
+      },
+      {
+       "name": "Acteur",
+       "character": "Rick Sanchez (uncredited)"
+      }
+     ]
+    },
+    {
+     "season_number": 6,
+     "episode_number": 2,
+     "name": "Rick : un film",
+     "air_date": null,
+     "overview": "",
+     "still_path": null,
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 3,
+     "name": "Épisode 6x03",
+     "air_date": "2022-09-13",
+     "overview": "Résumé.",
+     "still_path": "/s6e3.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 4,
+     "name": "Épisode 6x04",
+     "air_date": "2022-09-14",
+     "overview": "Résumé.",
+     "still_path": "/s6e4.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 5,
+     "name": "Épisode 6x05",
+     "air_date": "2022-09-15",
+     "overview": "Résumé.",
+     "still_path": "/s6e5.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 6,
+     "name": "Épisode 6x06",
+     "air_date": "2022-09-16",
+     "overview": "Résumé.",
+     "still_path": "/s6e6.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 7,
+     "name": "Épisode 6x07",
+     "air_date": "2022-09-17",
+     "overview": "Résumé.",
+     "still_path": "/s6e7.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 8,
+     "name": "Épisode 6x08",
+     "air_date": "2022-09-18",
+     "overview": "Résumé.",
+     "still_path": "/s6e8.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 9,
+     "name": "Épisode 6x09",
+     "air_date": "2022-09-19",
+     "overview": "Résumé.",
+     "still_path": "/s6e9.jpg",
+     "guest_stars": []
+    },
+    {
+     "season_number": 6,
+     "episode_number": 10,
+     "name": "Épisode 6x10",
+     "air_date": "2022-09-20",
+     "overview": "Résumé.",
+     "still_path": "/s6e10.jpg",
+     "guest_stars": []
+    }
+   ]
+  },
+  "7": {
+   "episodes": [
+    {
+     "season_number": 7,
+     "episode_number": 1,
+     "name": "Septième 1",
+     "air_date": "2023-10-01",
+     "overview": "Résumé de la saison 7.",
+     "still_path": null,
+     "guest_stars": []
+    },
+    {
+     "season_number": 7,
+     "episode_number": 2,
+     "name": "Septième 2",
+     "air_date": "2023-10-02",
+     "overview": "Résumé de la saison 7.",
+     "still_path": null,
+     "guest_stars": []
+    },
+    {
+     "season_number": 7,
+     "episode_number": 3,
+     "name": "Septième 3",
+     "air_date": "2023-10-03",
+     "overview": "Résumé de la saison 7.",
+     "still_path": null,
+     "guest_stars": []
+    }
+   ]
+  }
+ }
+}
