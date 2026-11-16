@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
 
-from .. import relations
 from ..client import RickMortyClient
 from ..catalogue import Catalogue
 from ..templating import get_catalogue, get_client, get_tmdb, templates
@@ -33,20 +32,20 @@ async def list_episodes(
 async def episode_detail(
     request: Request,
     episode_id: int,
+    catalogue: Catalogue = Depends(get_catalogue),
     client: RickMortyClient = Depends(get_client),
     tmdb: TmdbClient = Depends(get_tmdb),
 ):
-    episode = await client.get("episode", episode_id)
+    episode = await catalogue.get(episode_id)
     characters = await client.get_many("character", episode.character_ids)
     # Lieux apparaissant dans l'épisode = lieux actuels des personnages présents
     loc_ids = {c.location.id for c in characters if c.location.id}
     locations = await client.get_many("location", sorted(loc_ids))
-    total = (await client.list("episode")).info.count  # en cache après le 1er appel
-    season_eps = await relations.same_season(client, episode)
+    season_eps = await catalogue.same_season(episode)
     stills = await tmdb.stills([episode, *season_eps])
     return templates.TemplateResponse(
         request, "episodes/detail.html",
         {"theme": "episodes", "ep": episode, "characters": characters,
-         "locations": locations, "total": total, "season_eps": season_eps,
-         "stills": stills, "tmdb": bool(stills)},
+         "locations": locations, "pos": await catalogue.locate(episode),
+         "season_eps": season_eps, "stills": stills, "tmdb": bool(stills)},
     )

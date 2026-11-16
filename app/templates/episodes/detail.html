@@ -12,9 +12,10 @@
       <dt>Saison</dt><dd>{{ filter_link('/episodes', 'season', ep.season, 'Saison ' ~ ep.season) }}</dd>
       <dt>Diffusion</dt><dd>{{ ep.air_date }}</dd>
     </dl>
+    <p class="muted small">Position : {{ pos.index }} / {{ pos.total }}</p>
     <div class="ep-nav">
-      {% if ep.id > 1 %}<a class="btn-ghost" href="/episodes/{{ ep.id - 1 }}">← Épisode précédent</a>{% endif %}
-      {% if ep.id < total %}<a class="btn-ghost" href="/episodes/{{ ep.id + 1 }}">Épisode suivant →</a>{% endif %}
+      {% if pos.previous %}<a class="btn-ghost" href="/episodes/{{ pos.previous.id }}">← Épisode précédent</a>{% endif %}
+      {% if pos.next %}<a class="btn-ghost" href="/episodes/{{ pos.next.id }}">Épisode suivant →</a>{% endif %}
     </div>
   </div>
 </article>

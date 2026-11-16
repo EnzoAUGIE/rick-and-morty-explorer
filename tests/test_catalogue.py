@@ -29,3 +29,19 @@ def test_catalogue_is_built_once(client):
     client.get("/episodes")
     client.get("/episodes")
     assert sum("/api/episode?page=1" in c for c in fake_api.calls) == 1
+
+
+# ---------- catalogue R&M seul : détail
+def test_first_episode_has_no_previous(client):
+    html = client.get("/episodes/1").text
+    assert "Épisode précédent" not in html and "Épisode suivant" in html
+
+
+def test_detail_shows_position_in_catalogue(client):
+    assert "Position : 3 / 10" in client.get("/episodes/3").text
+
+
+def test_unknown_episode_ids_give_404(client):
+    for episode_id in (52, 999):
+        r = client.get(f"/episodes/{episode_id}")
+        assert r.status_code == 404 and "Introuvable" in r.text

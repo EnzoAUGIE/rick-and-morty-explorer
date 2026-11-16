@@ -12,8 +12,8 @@ Relations DÉRIVÉES (calculées ici en croisant les données) :
   - autres versions d'un personnage (même nom, autres dimensions) ;
   - co-vedettes (personnages qui partagent le plus d'épisodes) ;
   - épisodes où apparaissent les résidents d'un lieu ;
-  - autres lieux de la même dimension ;
-  - autres épisodes de la même saison.
+  - autres lieux de la même dimension.
+(Les autres épisodes de la même saison viennent du catalogue : app/catalogue.py.)
 Chaque fonction coûte au plus 1 requête (groupée) en plus de ce que la page charge déjà.
 """
 from __future__ import annotations
@@ -58,9 +58,3 @@ async def same_dimension(client: RickMortyClient, loc: Location, limit: int = 8)
     others = [x for x in page.results if x.id != loc.id and x.dimension == loc.dimension]
     return others[:limit], max(page.info.count - 1, len(others))
 
-
-async def same_season(client: RickMortyClient, ep: Episode) -> list[Episode]:
-    if not ep.season:
-        return []
-    page = await client.list("episode", 1, episode=f"S{ep.season:02d}")
-    return page.results

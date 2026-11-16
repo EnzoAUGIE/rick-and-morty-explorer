@@ -9,15 +9,25 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from .client import RickMortyClient
+from .client import NotFoundError, RickMortyClient
 from .models import Episode, Page
 
 PAGE_SIZE = 20
 
 
 @dataclass(frozen=True)
+class Position:
+    """Place d'un épisode dans l'ordre du catalogue."""
+    index: int  # à partir de 1
+    total: int
+    previous: Episode | None
+    next: Episode | None
+
+
+@dataclass(frozen=True)
 class _State:
     episodes: list[Episode]
+    by_id: dict[int, Episode]
     built_at: float
 
 
@@ -44,7 +54,7 @@ class Catalogue:
                 break
             page += 1
         episodes.sort(key=lambda e: (e.season, e.number))
-        return _State(episodes, time.monotonic())
+        return _State(episodes, {e.id: e for e in episodes}, time.monotonic())
 
     async def list(self, page: int = 1, *, name: str = "",
                    season: int | None = None) -> Page[Episode]:
@@ -63,3 +73,23 @@ class Catalogue:
     async def seasons(self) -> list[int]:
         """Saisons présentes dans le catalogue, triées."""
         return sorted({e.season for e in (await self._ensure()).episodes})
+
+    async def get(self, episode_id: int) -> Episode:
+        """Lève NotFoundError si aucun épisode du catalogue n'a cet id."""
+        try:
+            return (await self._ensure()).by_id[episode_id]
+        except KeyError:
+            raise NotFoundError(f"/episode/{episode_id}") from None
+
+    async def same_season(self, ep: Episode) -> list[Episode]:
+        if not ep.season:
+            return []
+        return [e for e in (await self._ensure()).episodes if e.season == ep.season]
+
+    async def locate(self, ep: Episode) -> Position:
+        """Voisins et rang de l'épisode dans l'ordre du catalogue."""
+        episodes = (await self._ensure()).episodes
+        i = next(n for n, e in enumerate(episodes) if e.id == ep.id)
+        return Position(index=i + 1, total=len(episodes),
+                        previous=episodes[i - 1] if i > 0 else None,
+                        next=episodes[i + 1] if i + 1 < len(episodes) else None)
