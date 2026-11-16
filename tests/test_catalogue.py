@@ -1,4 +1,5 @@
 """Catalogue des épisodes (R&M + épisodes complémentaires), testé au seam applicatif."""
+import copy
 import re
 
 import pytest
@@ -163,3 +164,28 @@ def test_complementary_detail_with_partial_data(full_client):
 
 def test_next_link_crosses_from_rm_to_complementary(full_client):
     assert 'href="/episodes/601"' in full_client.get("/episodes/10").text
+
+
+# ---------- ids déterministes et redirection 301 (ADR-0001)
+def test_deterministic_id_of_rm_episode_redirects(full_client):
+    r = full_client.get("/episodes/103", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/episodes/3"
+
+
+def test_episode_added_by_rm_later_replaces_complementary(full_client, monkeypatch):
+    data = copy.deepcopy(fake_api.DATA)
+    data["episode"].append(dict(
+        data["episode"][0], id=11, name="Solaricks (R&M)", episode="S06E01",
+        characters=[f"{fake_api.BASE}/character/1"], url=f"{fake_api.BASE}/episode/11"))
+    monkeypatch.setattr(fake_api, "DATA", data)
+    moved = full_client.get("/episodes/601", follow_redirects=False)
+    assert moved.status_code == 301 and moved.headers["location"] == "/episodes/11"
+    html = full_client.get("/episodes").text
+    assert html.count("S06E01") == 1 and "<small>23</small>" in html
+    assert "source TMDB" not in _card(html, 11)
+    assert full_client.get("/episodes/11").status_code == 200
+
+
+def test_undecodable_or_unknown_ids_give_404(full_client):
+    for episode_id in (600, 199, 700, 1000):
+        assert full_client.get(f"/episodes/{episode_id}", follow_redirects=False).status_code == 404

@@ -16,6 +16,20 @@ from .tmdb import TmdbClient, TmdbEntry
 PAGE_SIZE = 20
 
 
+class EpisodeMoved(Exception):
+    """L'id demandé était celui d'un épisode complémentaire que R&M sert désormais."""
+
+    def __init__(self, episode_id: int) -> None:
+        super().__init__(episode_id)
+        self.episode_id = episode_id  # id R&M vers lequel rediriger en 301
+
+
+def _code_of(episode_id: int) -> str | None:
+    """Code SxxEyy encodé par un id déterministe (saison*100 + numéro), ou None."""
+    season, number = divmod(episode_id, 100)
+    return f"S{season:02d}E{number:02d}" if season >= 1 and number >= 1 else None
+
+
 @dataclass(frozen=True)
 class Position:
     """Place d'un épisode dans l'ordre du catalogue."""
@@ -29,6 +43,7 @@ class Position:
 class _State:
     episodes: list[Episode]
     by_id: dict[int, Episode]
+    rm_by_code: dict[str, Episode]
     built_at: float
 
 
@@ -71,7 +86,8 @@ class Catalogue:
         episodes += [_complementary(entry) for code, entry in by_code.items()
                      if code not in served and 1 <= entry.number <= 99]
         episodes.sort(key=lambda e: (e.season, e.number))
-        return _State(episodes, {e.id: e for e in episodes}, time.monotonic())
+        return _State(episodes, {e.id: e for e in episodes},
+                      {e.episode: e for e in episodes if e.source == "rm"}, time.monotonic())
 
     async def list(self, page: int = 1, *, name: str = "",
                    season: int | None = None) -> Page[Episode]:
@@ -92,11 +108,14 @@ class Catalogue:
         return sorted({e.season for e in (await self._ensure()).episodes})
 
     async def get(self, episode_id: int) -> Episode:
-        """Lève NotFoundError si aucun épisode du catalogue n'a cet id."""
-        try:
-            return (await self._ensure()).by_id[episode_id]
-        except KeyError:
-            raise NotFoundError(f"/episode/{episode_id}") from None
+        """Lève NotFoundError (inconnu) ou EpisodeMoved (code désormais servi par R&M)."""
+        state = await self._ensure()
+        if episode_id in state.by_id:
+            return state.by_id[episode_id]
+        code = _code_of(episode_id)
+        if code in state.rm_by_code:
+            raise EpisodeMoved(state.rm_by_code[code].id)
+        raise NotFoundError(f"/episode/{episode_id}")
 
     async def same_season(self, ep: Episode) -> list[Episode]:
         if not ep.season:

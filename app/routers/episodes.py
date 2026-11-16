@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import RedirectResponse
 
-from ..catalogue import Catalogue
+from ..catalogue import Catalogue, EpisodeMoved
 from ..client import RickMortyClient
 from ..templating import get_catalogue, get_client, templates
 
@@ -32,7 +33,10 @@ async def episode_detail(
     catalogue: Catalogue = Depends(get_catalogue),
     client: RickMortyClient = Depends(get_client),
 ):
-    episode = await catalogue.get(episode_id)
+    try:
+        episode = await catalogue.get(episode_id)
+    except EpisodeMoved as moved:  # ADR-0001 : R&M sert maintenant ce code
+        return RedirectResponse(f"/episodes/{moved.episode_id}", status_code=301)
     characters = await client.get_many("character", episode.character_ids)
     # Lieux apparaissant dans l'épisode = lieux actuels des personnages présents
     loc_ids = {c.location.id for c in characters if c.location.id}
