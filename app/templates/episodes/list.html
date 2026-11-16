@@ -21,7 +21,7 @@
   <div class="grid grid-wide">
     {% for ep in page.results %}
       <a class="card" href="/episodes/{{ ep.id }}">
-        {{ episode_cover(ep, stills) }}
+        {{ episode_cover(ep) }}
         <div class="card-body">
           <strong>{{ ep.name }}</strong>
           <small>{{ ep.air_date }} · {{ ep.characters | length }} personnages</small>

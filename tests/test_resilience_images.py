@@ -10,7 +10,7 @@ from app.main import create_app
 from app.models import Location
 from app.tmdb import TmdbClient
 
-from . import fake_api
+from . import fake_api, fake_tmdb
 
 
 def flaky(fail_times: int, status: int = 429):
@@ -114,18 +114,9 @@ def test_episode_mosaic_without_tmdb(client):
     assert 'class="mosaic"' in html and "TMDB" not in html
 
 
-def fake_tmdb():
-    def handler(request):
-        assert request.url.params["api_key"] == "k"
-        season = int(request.url.path.rsplit("/", 1)[1])
-        return httpx.Response(200, json={"episodes": [
-            {"episode_number": n, "still_path": f"/s{season}e{n}.jpg"} for n in range(1, 12)]})
-    return TmdbClient("k", transport=httpx.MockTransport(handler))
-
-
 def test_episode_stills_with_tmdb():
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         html = c.get("/episodes").text
         detail = c.get("/episodes/3").text
@@ -150,14 +141,16 @@ def test_mosaic_prefers_guest_characters():
 
 def test_tmdb_failure_never_logs_api_key(caplog):
     """Un échec TMDB (clé refusée, réseau) ne doit jamais écrire la clé dans les logs."""
-    import asyncio
     secret = "SECRET-KEY-123"
     t = TmdbClient(secret, transport=httpx.MockTransport(lambda r: httpx.Response(401, json={})))
-    ep = type("E", (), {"id": 1, "season": 1, "number": 1})()
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0}, tmdb=t)
     with caplog.at_level("WARNING", logger="app.tmdb"):
-        assert asyncio.run(t.stills([ep])) == {}
+        with TestClient(app) as c:
+            r = c.get("/episodes")
+    assert r.status_code == 200 and 'class="mosaic"' in r.text and "TMDB" not in r.text
     assert "401" in caplog.text            # la cause reste visible
     assert secret not in caplog.text
+    assert all(secret not in rec.getMessage() for rec in caplog.records)
 
 
 # ---------- cache disque des réponses API
@@ -233,14 +226,14 @@ def test_tmdb_attribution_hidden_when_tmdb_returns_no_image():
 
 def test_tmdb_attribution_hidden_on_pages_without_episode_images():
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         assert "TMDB" not in c.get("/characters").text
 
 
 def test_api_cache_never_contains_tmdb_key(tmp_cache):
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         c.get("/episodes")
         c.get("/episodes/3")
@@ -250,7 +243,7 @@ def test_api_cache_never_contains_tmdb_key(tmp_cache):
 
 def test_tmdb_attribution_shown_when_an_image_is_displayed():
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         assert "themoviedb.org" in c.get("/episodes").text
 

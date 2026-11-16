@@ -44,10 +44,10 @@ this.onerror=null;this.src='/static/img/placeholder.svg'
 {%- endmacro %}
 
 {# Couverture d'épisode : image TMDB si disponible, sinon mosaïque des personnages #}
-{% macro episode_cover(ep, stills, big=false) %}
+{% macro episode_cover(ep, big=false) %}
   <div class="cover{{ ' cover-big' if big }}">
-    {% if stills.get(ep.id) %}
-      <img src="{{ stills[ep.id] }}" alt="{{ ep.name }}" loading="lazy" onerror="{{ fallback() }}">
+    {% if ep.image %}
+      <img src="{{ ep.image }}" alt="{{ ep.name }}" loading="lazy" onerror="{{ fallback() }}">
     {% else %}
       <div class="mosaic">
         {% for src in ep.cover_avatars %}<img src="{{ src }}" alt="" loading="lazy" onerror="{{ fallback() }}">{% endfor %}

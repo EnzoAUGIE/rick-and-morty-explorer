@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from .client import NotFoundError, RickMortyClient
 from .models import Episode, Page
+from .tmdb import TmdbClient
 
 PAGE_SIZE = 20
 
@@ -35,8 +36,8 @@ class Catalogue:
     """Chaque méthode peut déclencher la construction ; `ApiUnavailableError` ne remonte
     que si R&M est injoignable et qu'aucune donnée R&M n'existe (mémoire ou cache)."""
 
-    def __init__(self, client: RickMortyClient) -> None:
-        self._client = client
+    def __init__(self, client: RickMortyClient, tmdb: TmdbClient) -> None:
+        self._client, self._tmdb = client, tmdb
         self._state: _State | None = None
 
     async def _ensure(self) -> _State:
@@ -53,6 +54,9 @@ class Catalogue:
             if not data.has_next:
                 break
             page += 1
+        images = {e.code: e.still for e in (await self._tmdb.listing()).entries if e.still}
+        episodes = [e.model_copy(update={"image": images[e.episode]}) if e.episode in images else e
+                    for e in episodes]
         episodes.sort(key=lambda e: (e.season, e.number))
         return _State(episodes, {e.id: e for e in episodes}, time.monotonic())
 

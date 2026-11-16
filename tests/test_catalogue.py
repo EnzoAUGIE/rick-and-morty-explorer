@@ -1,5 +1,11 @@
 """Catalogue des épisodes (R&M + épisodes complémentaires), testé au seam applicatif."""
-from . import fake_api
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import create_app
+from app.tmdb import TmdbClient
+
+from . import fake_api, fake_tmdb
 
 
 # ---------- catalogue R&M seul : liste
@@ -45,3 +51,41 @@ def test_unknown_episode_ids_give_404(client):
     for episode_id in (52, 999):
         r = client.get(f"/episodes/{episode_id}")
         assert r.status_code == 404 and "Introuvable" in r.text
+
+
+# ---------- images TMDB portées par les épisodes R&M
+def test_rm_episode_wins_and_gets_tmdb_image(full_client):
+    html = full_client.get("/episodes").text
+    assert "https://image.tmdb.org/t/p/w500/s1e1.jpg" in html
+    assert "Pilot" in html and ">Pilote<" not in html
+
+
+def test_season_zero_is_never_requested(full_client):
+    full_client.get("/episodes")
+    assert any(c.endswith("/season/1") for c in fake_tmdb.calls)
+    assert not any("/season/0" in c for c in fake_tmdb.calls)
+
+
+def test_without_key_serves_rm_with_warning_and_no_tmdb_call(caplog):
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                     tmdb=TmdbClient(""))
+    fake_tmdb.calls.clear()
+    with caplog.at_level("WARNING", logger="app"):
+        with TestClient(app) as c:
+            html = c.get("/episodes").text
+    assert "<small>10</small>" in html and "TMDB" not in html
+    assert fake_tmdb.calls == []
+    assert "TMDB_API_KEY" in caplog.text
+
+
+@pytest.mark.parametrize("failure", ["down", 401])
+def test_tmdb_down_serves_rm_with_mosaic(failure, caplog):
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                     tmdb=fake_tmdb.client(fail={"show": failure}))
+    with caplog.at_level("WARNING", logger="app.tmdb"):
+        with TestClient(app) as c:
+            r = c.get("/episodes")
+    assert r.status_code == 200 and "<small>10</small>" in r.text
+    assert 'class="mosaic"' in r.text and "TMDB" not in r.text
+    assert [rec for rec in caplog.records if rec.levelname == "WARNING"]
+    assert fake_tmdb.KEY not in caplog.text

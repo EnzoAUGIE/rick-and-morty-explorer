@@ -4,7 +4,7 @@
 {% block content %}
 <a class="back" href="/episodes">← Tous les épisodes</a>
 <article class="panel detail detail-wide">
-  {{ episode_cover(ep, stills, big=true) }}
+  {{ episode_cover(ep, big=true) }}
   <div>
     <h1>{{ ep.name }}</h1>
     <dl class="facts">
@@ -27,7 +27,7 @@
     {% for e in season_eps %}
       <a class="season-ep{{ ' current' if e.id == ep.id }}" href="/episodes/{{ e.id }}"
          {{ 'aria-current="page"' if e.id == ep.id }} title="{{ e.name }}">
-        {{ episode_cover(e, stills) }}
+        {{ episode_cover(e) }}
         <span>{{ e.name }}</span>
       </a>
     {% endfor %}
