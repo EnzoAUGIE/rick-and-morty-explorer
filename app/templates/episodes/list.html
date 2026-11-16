@@ -24,7 +24,7 @@
         {{ episode_cover(ep) }}
         <div class="card-body">
           <strong>{{ ep.name }}</strong>
-          <small>{{ ep.air_date }} · {{ ep.characters | length }} personnages</small>
+          <small>{{ ep.air_date or "Date inconnue" }}{% if ep.source == "rm" %} · {{ ep.characters | length }} personnages{% endif %}</small>
         </div>
       </a>
     {% endfor %}

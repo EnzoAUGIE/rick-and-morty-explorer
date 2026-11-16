@@ -218,6 +218,8 @@ dialog .quote { font-family: "Bangers", cursive; font-size: 1.8rem; color: var(-
   box-shadow: 0 0 25px color-mix(in srgb, var(--accent) 45%, transparent); }
 .mosaic { display: grid; grid-template-columns: repeat(4, 1fr); height: 100%; }
 .mosaic img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: auto; }
+.cover-empty { width: 100%; height: 100%; background: repeating-linear-gradient(135deg, #0b0f12, #0b0f12 12px, #11171c 12px, #11171c 24px); }
+.badge-source { position: absolute; right: 10px; bottom: 10px; background: rgba(5, 8, 10, .8); font-size: .7rem; }
 .cover-badge { position: absolute; left: 10px; bottom: 10px; background: rgba(5, 8, 10, .8); }
 .detail-wide { grid-template-columns: minmax(0, 420px) 1fr; }
 .small-note { font-size: .85rem; }

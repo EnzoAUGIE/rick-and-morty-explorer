@@ -1,4 +1,6 @@
 """Catalogue des épisodes (R&M + épisodes complémentaires), testé au seam applicatif."""
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -89,3 +91,75 @@ def test_tmdb_down_serves_rm_with_mosaic(failure, caplog):
     assert 'class="mosaic"' in r.text and "TMDB" not in r.text
     assert [rec for rec in caplog.records if rec.levelname == "WARNING"]
     assert fake_tmdb.KEY not in caplog.text
+
+
+# ---------- épisodes complémentaires : fusion, liste, détail, données partielles
+def _card(html: str, episode_id: int) -> str:
+    m = re.search(rf'<a class="card" href="/episodes/{episode_id}">(.*?)</a>', html, re.S)
+    assert m, f"carte {episode_id} absente"
+    return m[1]
+
+
+def test_catalogue_adds_complementary_episodes(full_client):
+    html = full_client.get("/episodes").text
+    assert "<small>23</small>" in html and "Page 1 / 2" in html
+    assert re.findall(r'<option value="(\d+)"', html) == ["1", "6", "7"]
+    page2 = full_client.get("/episodes?page=2").text
+    assert "Page 2 / 2" in page2 and "page=1" in page2
+    assert all(code in page2 for code in ("S07E01", "S07E02", "S07E03"))
+
+
+def test_rm_wins_and_season_zero_is_excluded(full_client):
+    html = full_client.get("/episodes").text
+    assert not any(f'href="/episodes/{i}"' in html for i in range(101, 111))
+    assert "S00" not in html and "Saison 0" not in html
+
+
+def test_season_filter_on_complementary_season(full_client):
+    html = full_client.get("/episodes?season=6").text
+    assert html.count('class="card" href="/episodes/6') == 10
+    assert all(f'href="/episodes/{i}"' in html for i in range(601, 611))
+    assert "Aucun résultat" in full_client.get("/episodes?season=8").text
+
+
+def test_name_filter_across_sources(full_client):
+    html = full_client.get("/episodes?name=solaricks").text
+    assert 'href="/episodes/601"' in html and "<small>1</small>" in html
+    assert "Aucun résultat" in full_client.get("/episodes?name=sol&season=7").text
+
+
+def test_pagination_keeps_name_and_season(full_client, monkeypatch):
+    monkeypatch.setattr("app.catalogue.PAGE_SIZE", 4)
+    html = full_client.get("/episodes?name=i&season=6").text
+    link = re.search(r'href="([^"]+)">Suivant', html)[1]
+    assert "Page 1 / 3" in html and "page=2" in link and "name=i" in link and "season=6" in link
+
+
+def test_complementary_card_has_no_character_count(full_client):
+    html = full_client.get("/episodes?season=6").text
+    card = _card(html, 601)
+    assert "personnages" not in card and "September 4, 2022" in card
+    assert "source TMDB" in card
+    assert "19 personnages" in _card(full_client.get("/episodes").text, 1)
+
+
+def test_complementary_detail_full(full_client):
+    html = full_client.get("/episodes/601").text
+    assert full_client.get("/episodes/601").status_code == 200
+    assert "Solaricks" in html and "September 4, 2022" in html
+    assert "Rick et Morty explorent un monde solaire." in html
+    assert "https://image.tmdb.org/t/p/w500/s6e1.jpg" in html and "source TMDB" in html
+    assert "Position : 11 / 23" in html
+    assert 'href="/episodes/10"' in html and 'href="/episodes/602"' in html
+    assert 'class="season-ep current"' in html
+    assert "personnages" not in html and "themoviedb.org" in html
+
+
+def test_complementary_detail_with_partial_data(full_client):
+    html = full_client.get("/episodes/602").text
+    assert "Date inconnue" in html and "Résumé indisponible" in html
+    assert "cover-empty" in html and "Aucun invité connu." in html
+
+
+def test_next_link_crosses_from_rm_to_complementary(full_client):
+    assert 'href="/episodes/601"' in full_client.get("/episodes/10").text

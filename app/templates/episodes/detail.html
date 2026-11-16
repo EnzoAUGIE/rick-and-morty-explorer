@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import character_card, empty, episode_cover, filter_link %}
+{% from "_macros.html" import character_card, empty, episode_cover, filter_link, guest_chip %}
 {% block title %}{{ ep.name }} · Rick & Morty{% endblock %}
 {% block content %}
 <a class="back" href="/episodes">← Tous les épisodes</a>
@@ -10,7 +10,7 @@
     <dl class="facts">
       <dt>Code</dt><dd>{{ ep.episode }}</dd>
       <dt>Saison</dt><dd>{{ filter_link('/episodes', 'season', ep.season, 'Saison ' ~ ep.season) }}</dd>
-      <dt>Diffusion</dt><dd>{{ ep.air_date }}</dd>
+      <dt>Diffusion</dt><dd>{{ ep.air_date or "Date inconnue" }}</dd>
     </dl>
     <p class="muted small">Position : {{ pos.index }} / {{ pos.total }}</p>
     <div class="ep-nav">
@@ -35,6 +35,19 @@
 </section>
 {% endif %}
 
+{% if ep.source == "tmdb" %}
+<section class="panel">
+  <h2>Résumé</h2>
+  <p>{{ ep.summary or "Résumé indisponible" }}</p>
+</section>
+
+<section class="panel">
+  <h2>Invités</h2>
+  {% if ep.guests %}
+    <div class="chips">{% for g in ep.guests %}{{ guest_chip(g) }}{% endfor %}</div>
+  {% else %}{{ empty("Aucun invité connu.") }}{% endif %}
+</section>
+{% else %}
 {% if locations %}
 <section class="panel">
   <h2>Lieux liés</h2>
@@ -56,4 +69,5 @@
     <div class="grid">{% for c in characters %}{{ character_card(c) }}{% endfor %}</div>
   {% else %}{{ empty() }}{% endif %}
 </section>
+{% endif %}
 {% endblock %}

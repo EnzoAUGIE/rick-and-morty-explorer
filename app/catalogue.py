@@ -10,8 +10,8 @@ import time
 from dataclasses import dataclass
 
 from .client import NotFoundError, RickMortyClient
-from .models import Episode, Page
-from .tmdb import TmdbClient
+from .models import Episode, Guest, Page
+from .tmdb import TmdbClient, TmdbEntry
 
 PAGE_SIZE = 20
 
@@ -30,6 +30,14 @@ class _State:
     episodes: list[Episode]
     by_id: dict[int, Episode]
     built_at: float
+
+
+def _complementary(entry: TmdbEntry) -> Episode:
+    """Épisode complémentaire : id déterministe saison*100 + numéro (ADR-0001)."""
+    return Episode(
+        id=entry.season * 100 + entry.number, source="tmdb", episode=entry.code,
+        name=entry.name or entry.code, air_date=entry.air_date, summary=entry.overview,
+        image=entry.still, characters=[], guests=[Guest(name=g) for g in entry.guests])
 
 
 class Catalogue:
@@ -54,9 +62,14 @@ class Catalogue:
             if not data.has_next:
                 break
             page += 1
-        images = {e.code: e.still for e in (await self._tmdb.listing()).entries if e.still}
-        episodes = [e.model_copy(update={"image": images[e.episode]}) if e.episode in images else e
+        listing = await self._tmdb.listing()
+        by_code = {e.code: e for e in listing.entries}
+        episodes = [e.model_copy(update={"image": by_code[e.episode].still})
+                    if e.episode in by_code and by_code[e.episode].still else e
                     for e in episodes]
+        served = {e.episode for e in episodes}
+        episodes += [_complementary(entry) for code, entry in by_code.items()
+                     if code not in served and 1 <= entry.number <= 99]
         episodes.sort(key=lambda e: (e.season, e.number))
         return _State(episodes, {e.id: e for e in episodes}, time.monotonic())
 
