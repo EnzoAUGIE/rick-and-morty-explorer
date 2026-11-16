@@ -26,11 +26,13 @@ app/
 ├── main.py          # create_app() : routes, fichiers statiques, pages d'erreur 404/503
 ├── config.py        # URL de l'API, timeout, durée du cache (variables d'env RM_*)
 ├── client.py        # RickMortyClient : appels HTTP async, cache, requêtes groupées
+├── disk_cache.py    # DiskCache : cache disque JSON atomique (espaces « api » et « tmdb »)
+├── catalogue.py     # Catalogue : fusion R&M + épisodes complémentaires, filtre, pagination, ids, 301
 ├── models.py        # Character / Location / Episode (Pydantic) + id_from_url()
-├── templating.py    # Jinja2 partagé + dépendances get_client() / get_tmdb()
+├── templating.py    # Jinja2 partagé + dépendances get_client() / get_catalogue()
 ├── relations.py     # relations dérivées (versions, co-vedettes, épisodes d'un lieu…)
 ├── illustrations.py # SVG générés pour les lieux (selon le type, couleurs tirées du nom)
-├── tmdb.py          # images d'épisodes TMDB (optionnel, si TMDB_API_KEY)
+├── tmdb.py          # TmdbClient : épisodes et images TMDB (optionnel, si TMDB_API_KEY)
 ├── routers/         # 1 fichier par catégorie : liste + détail
 │   ├── home.py  characters.py  locations.py  episodes.py
 │   └── media.py     # /media/character/{id}.jpeg : avatars en cache disque
@@ -39,12 +41,17 @@ app/
 tests/
 ├── fixtures/api_sample.json  # 40 persos, 20 lieux, 10 épisodes (dump de test officiel)
 ├── fake_api.py      # API simulée, fidèle au serveur Node (httpx.MockTransport)
+├── fake_tmdb.py     # TMDB simulé (hypothèses sur ses réponses documentées en tête de fichier)
+├── fixtures/tmdb_sample.json  # saisons 0, 1, 6 et 7 écrites à la main
+├── test_catalogue.py          # catalogue : épisodes complémentaires, invités, 301, résilience
 ├── test_app.py      # pages, filtres, pagination, liens croisés, 404/503, cache
 ├── test_resilience_images.py  # nouvelles tentatives, cache périmé, avatars, SVG, TMDB
 └── test_relations.py          # liens par filtre et relations dérivées
 ```
 
-Flux d'une requête : `navigateur → router → RickMortyClient → API (ou cache) → modèle Pydantic → template Jinja2 → HTML`.
+Flux d'une requête : `navigateur → router → Catalogue → RickMortyClient / TmdbClient → cache disque → API (R&M ou TMDB) → modèle Pydantic → template Jinja2 → HTML`.
+Les routers d'épisodes ne parlent qu'au `Catalogue` (construit à la première requête, jamais au démarrage) ;
+les autres routers passent directement par `RickMortyClient`.
 
 ## Liens entre les pages (d'après la documentation de l'API)
 
@@ -73,7 +80,7 @@ Flux d'une requête : `navigateur → router → RickMortyClient → API (ou cac
 | Personnage | Partage le plus d'épisodes avec | comptage des personnages de ses épisodes |
 | Lieu | Épisodes où apparaissent ses résidents | union des épisodes des résidents |
 | Lieu | Autres lieux de la même dimension | filtre `dimension` |
-| Épisode | Bandeau de la saison | filtre `episode=S01` |
+| Épisode | Bandeau de la saison | épisodes du catalogue de la même saison |
 | Épisode | Lieux liés | dernier lieu connu de ses personnages |
 
 Limite connue de l'API : les filtres cherchent un texte *contenu* (insensible à la casse), pas une
@@ -98,9 +105,15 @@ valeur exacte. `species=Human` ramène donc aussi les `Humanoid`. L'API ne propo
 |---|---|
 | Personnages | avatars de l'API, en cache disque |
 | Lieux | illustration SVG générée (planète, amas, station, dimension, micro-univers, lieu « terrestre ») |
-| Épisodes | capture officielle TMDB si `TMDB_API_KEY` est défini, sinon mosaïque de 4 personnages invités |
+| Épisodes | capture officielle TMDB si `TMDB_API_KEY` est défini, sinon mosaïque de 4 personnages ; un épisode complémentaire sans image affiche un cadre neutre |
 
-Activer les images TMDB (clé gratuite : themoviedb.org → Paramètres → API → « Clé d'API (v3) ») :
+Avec une clé TMDB, le catalogue est complété par les **épisodes complémentaires** : tout code `SxxEyy`
+absent de l'API R&M (saisons 6 et suivantes ; saison 0 exclue). L'API R&M l'emporte toujours pour un
+même code. Un épisode complémentaire a pour id `saison*100 + numéro` (S06E01 → `/episodes/601`),
+et ses invités sont liés à leur fiche quand le nom correspond. Sans clé, ou si TMDB tombe, le site
+sert les épisodes R&M seuls (mode dégradé : un catalogue incomplet est reconstruit plus tard).
+
+Activer TMDB (clé gratuite : themoviedb.org → Paramètres → API → « Clé d'API (v3) ») :
 
 ```bash
 export TMDB_API_KEY="ta_cle_v3"
@@ -115,9 +128,10 @@ uvicorn app.main:app --reload
 | `RM_API_RETRIES` | 3 | nouvelles tentatives par requête |
 | `RM_API_BACKOFF` | 0.5 | première attente (s), doublée à chaque essai |
 | `RM_HTTP_TIMEOUT` | 10 | timeout (s) |
-| `RM_CACHE_TTL` | 3600 | durée du cache mémoire (s) |
+| `RM_CACHE_TTL` | 3600 | durée du cache mémoire (s), aussi durée de vie d'un catalogue complet |
+| `RM_CATALOGUE_RETRY` | 60 | délai (s) avant de reconstruire un catalogue en mode dégradé |
 | `RM_CACHE_DIR` | `.cache` | dossier du cache disque |
-| `TMDB_API_KEY` | — | active les images d'épisodes |
+| `TMDB_API_KEY` | — | active les épisodes complémentaires et les images d'épisodes |
 
 ## Routes
 
@@ -129,7 +143,7 @@ uvicorn app.main:app --reload
 | `/locations?name=&page=` | Liste des lieux |
 | `/locations/{id}` | Fiche → liens vers les résidents |
 | `/episodes?name=&season=&page=` | Liste des épisodes (filtre saison) |
-| `/episodes/{id}` | Fiche → liens vers personnages, lieux liés, épisode préc./suiv. |
+| `/episodes/{id}` | Fiche → liens vers personnages, lieux liés, épisode préc./suiv. ; pour un id complémentaire devenu un id R&M : redirection 301 vers `/episodes/{id R&M}` |
 | `/media/character/{id}.jpeg` | Avatar (cache disque) |
 
 ## Différences avec la version Java

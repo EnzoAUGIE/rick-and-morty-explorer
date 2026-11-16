@@ -471,3 +471,22 @@ def test_concurrent_cold_requests_build_the_catalogue_once():
     assert all(r.status_code == 200 and "<small>23</small>" in r.text for r in responses)
     assert len(fake_tmdb.calls) == len(set(fake_tmdb.calls)) == 4
     assert sum("/api/episode?page=1" in c for c in fake_api.calls) == 1
+
+
+# ---------- attribution conditionnelle et pages inchangées
+@pytest.mark.parametrize("path", ["/episodes/601", "/episodes?season=6", "/episodes?season=7"])
+def test_attribution_shown_when_complementary_episodes_are_visible(full_client, path):
+    # ?season=7 : épisodes complémentaires sans aucune image, l'attribution reste affichée
+    html = full_client.get(path).text
+    assert "themoviedb.org" in html and "Épisodes complémentaires et images" in html
+
+
+@pytest.mark.parametrize("path", ["/episodes", "/episodes/1", "/characters/1", "/locations/3"])
+def test_no_tmdb_mention_without_key(client, path):
+    assert "TMDB" not in client.get(path).text
+
+
+@pytest.mark.parametrize("path", ["/characters/1", "/locations/3"])
+def test_character_and_location_pages_ignore_complementary_episodes(full_client, path):
+    html = full_client.get(path).text
+    assert not re.search(r'href="/episodes/[1-9]\d\d"', html) and "TMDB" not in html
