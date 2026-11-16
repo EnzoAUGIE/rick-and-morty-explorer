@@ -287,3 +287,92 @@ def test_failed_partial_rebuild_keeps_the_previous_catalogue(monkeypatch):
         monkeypatch.setattr(fake_api, "LIMIT", 5)  # R&M pagine autrement : la page 2 est inconnue du cache
         r = c.get("/episodes")
     assert r.status_code == 200 and "<small>23</small>" in r.text
+
+
+# ---------- boucle 2 : régressions possibles des correctifs
+def test_repeated_failed_rebuilds_never_shrink_a_once_complete_catalogue(monkeypatch):
+    """Deux reconstructions partielles de suite : la 1re garde l'ancien état (marqué dégradé),
+    la 2e ne doit pas l'écraser pour autant."""
+    monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)
+    monkeypatch.setattr(config, "CATALOGUE_RETRY_SECONDS", 0)
+
+    def handler(request):
+        if request.url.path == "/api/episode" and request.url.params.get("page") == "2":
+            return httpx.Response(429, headers={"retry-after": "0"})
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler),
+                     client_options={"backoff": 0, "retries": 1, "ttl": 0, "disk_ttl": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        assert "<small>23</small>" in c.get("/episodes").text
+        monkeypatch.setattr(fake_api, "LIMIT", 5)
+        for _ in range(3):
+            r = c.get("/episodes")
+            assert r.status_code == 200 and "<small>23</small>" in r.text
+
+
+def test_incomplete_catalogue_accepts_a_later_incomplete_rebuild_and_then_a_complete_one(monkeypatch):
+    """Ancien catalogue déjà incomplet (TMDB saison 6 en 429) : une reconstruction complète
+    est acceptée, et l'ancien état incomplet n'empêche pas d'avancer."""
+    monkeypatch.setattr(config, "CATALOGUE_RETRY_SECONDS", 0)
+    fail = {6: 429}
+    with _start(fake_tmdb.client(fail=fail)) as c:
+        assert "<small>13</small>" in c.get("/episodes").text
+        assert "<small>13</small>" in c.get("/episodes").text  # toujours en panne : stable
+        fail.clear()
+        assert "<small>23</small>" in c.get("/episodes").text
+
+
+def test_cold_503_does_not_block_the_next_request():
+    state = {"down": True}
+
+    def handler(request):
+        if state["down"]:
+            raise httpx.ConnectError("offline")
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler), client_options={"backoff": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        assert c.get("/episodes").status_code == 503
+        assert c.get("/episodes/601").status_code == 503  # le verrou a été relâché
+        state["down"] = False
+        assert "<small>23</small>" in c.get("/episodes").text
+
+
+def test_concurrent_visits_during_outage_stay_plain_text_then_recover_and_search_once():
+    state = {"down": True}
+
+    async def handler(request):
+        await asyncio.sleep(0.01)
+        if state["down"] and request.url.path == "/api/character":
+            return httpx.Response(503)
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler), client_options={"backoff": 0},
+                     tmdb=fake_tmdb.client())
+
+    async def scenario():
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                         base_url="http://test") as http:
+                during = await asyncio.gather(*(http.get("/episodes/601") for _ in range(3)))
+                state["down"] = False
+                fake_api.calls.clear()
+                after = await asyncio.gather(*(http.get("/episodes/601") for _ in range(3)))
+                return during, after
+
+    during, after = asyncio.run(scenario())
+    assert all(r.status_code == 200 and 'href="/characters/1"' not in r.text for r in during)
+    assert all(r.status_code == 200 and 'href="/characters/1"' in r.text for r in after)
+    searches = [c for c in fake_api.calls if "/api/character?" in c]
+    assert searches and len(searches) == len(set(searches))
+
+
+@pytest.mark.parametrize("value,expected", [("6", "<small>10</small>"), ("06", "<small>10</small>"),
+                                            ("٦", "<small>23</small>"), ("６", "<small>23</small>"),
+                                            (" 6", "<small>23</small>"), ("6 ", "<small>23</small>")])
+def test_season_filter_accepts_only_ascii_digits(full_client, value, expected):
+    r = full_client.get("/episodes", params={"season": value})
+    assert r.status_code == 200 and expected in r.text
