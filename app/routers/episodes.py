@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from .. import relations
 from ..client import RickMortyClient
-from ..templating import get_client, get_tmdb, templates
+from ..catalogue import Catalogue
+from ..templating import get_catalogue, get_client, get_tmdb, templates
 from ..tmdb import TmdbClient
 
 router = APIRouter(prefix="/episodes", tags=["épisodes"])
@@ -14,17 +15,16 @@ async def list_episodes(
     page: int = Query(1, ge=1),
     name: str = "",
     season: str = "",
-    client: RickMortyClient = Depends(get_client),
+    catalogue: Catalogue = Depends(get_catalogue),
     tmdb: TmdbClient = Depends(get_tmdb),
 ):
-    # L'API filtre par code d'épisode : "S02" renvoie toute la saison 2
-    code = f"S{int(season):02d}" if season.isdigit() else ""
-    data = await client.list("episode", page, name=name, episode=code)
+    data = await catalogue.list(page, name=name, season=int(season) if season.isdigit() else None)
     stills = await tmdb.stills(data.results)
     return templates.TemplateResponse(
         request, "episodes/list.html",
         {"theme": "episodes", "page": data, "name": name, "season": season,
          "filters": {"name": name, "season": season},
+         "seasons": await catalogue.seasons(),
          "stills": stills, "tmdb": bool(stills)},
     )
 

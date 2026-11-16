@@ -9,6 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
+from .catalogue import Catalogue
 from .client import ApiUnavailableError, NotFoundError, RickMortyClient
 from .routers import characters, episodes, home, locations, media
 from .tmdb import TmdbClient
@@ -38,6 +39,7 @@ def create_app(
     async def lifespan(app: FastAPI):
         app.state.client = RickMortyClient(transport=transport, **(client_options or {}))
         app.state.tmdb = tmdb or TmdbClient()
+        app.state.catalogue = Catalogue(app.state.client)
         logging.getLogger("app").info(
             "Images d'épisodes : %s", "TMDB" if app.state.tmdb.enabled
             else "mosaïque de personnages (définir TMDB_API_KEY pour les vraies images)")

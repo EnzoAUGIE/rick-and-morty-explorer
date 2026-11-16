@@ -18,5 +18,9 @@ def get_client(request: Request) -> RickMortyClient:
     return request.app.state.client
 
 
+def get_catalogue(request: Request):
+    return request.app.state.catalogue
+
+
 def get_tmdb(request: Request):
     return request.app.state.tmdb

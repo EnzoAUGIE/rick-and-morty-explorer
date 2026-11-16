@@ -8,7 +8,7 @@
     <input type="search" name="name" value="{{ name }}" placeholder="Rechercher un épisode…">
     <select name="season" onchange="this.form.submit()">
       <option value="">Toutes saisons</option>
-      {% for s in range(1, 6) %}
+      {% for s in seasons %}
         <option value="{{ s }}" {{ 'selected' if season == s|string }}>Saison {{ s }}</option>
       {% endfor %}
     </select>
