@@ -1,8 +1,8 @@
 """Client de l'API Rick & Morty (équivalent amélioré de ClientHttp.java).
 
 - asynchrone (httpx) ;
-- cache mémoire (1 h) puis cache disque (.cache/api, 7 jours, survit au redémarrage),
-  réutilisés même périmés si l'API tombe ;
+- cache mémoire (1 h) puis cache disque (DiskCache « api » : .cache/api, 7 jours, survit
+  au redémarrage), réutilisés même périmés si l'API tombe ;
 - nouvelles tentatives avec attente croissante sur 429 / 5xx / timeout
   (respecte l'en-tête Retry-After) ;
 - récupération groupée (/character/1,2,3) : 1 requête au lieu de N.
@@ -10,19 +10,15 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
-import os
-import tempfile
 import time
-from pathlib import Path
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
 from . import config
+from .disk_cache import DiskCache
 from .models import Character, Episode, Location, Page
 
 log = logging.getLogger("app.client")
@@ -58,7 +54,8 @@ class RickMortyClient:
             base_url=base_url, timeout=config.HTTP_TIMEOUT, transport=transport,
             headers={"User-Agent": "rickmorty-py (student project)"},
         )
-        self._ttl, self._disk_ttl = ttl, disk_ttl
+        self._ttl = ttl
+        self._disk = DiskCache("api", disk_ttl)
         self._retries, self._backoff = retries, backoff
         self._cache: dict[str, tuple[float, Any]] = {}
 
@@ -89,45 +86,17 @@ class RickMortyClient:
         log.error("API %s -> %s, abandon après %d essais", url, reason, self._retries + 1)
         raise ApiUnavailableError(reason)
 
-    # ------------------------------------------------------------------ cache disque
-    @staticmethod
-    def _disk_path(key: str) -> Path:
-        return config.CACHE_DIR / "api" / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
-
-    def _disk_read(self, key: str) -> tuple[float, Any] | None:
-        """(horodatage epoch, données) ou None si absent / illisible."""
-        try:
-            entry = json.loads(self._disk_path(key).read_text(encoding="utf-8"))
-            return float(entry["at"]), entry["data"]
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
-
-    def _disk_write(self, key: str, data: Any) -> None:
-        """Écriture atomique (fichier temporaire + rename) ; un échec n'est jamais fatal."""
-        path = self._disk_path(key)
-        tmp = None
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump({"at": time.time(), "data": data}, f)
-            os.replace(tmp, path)
-        except (OSError, TypeError, ValueError) as exc:
-            log.warning("cache disque non écrit (%s)", type(exc).__name__)
-            if tmp:
-                Path(tmp).unlink(missing_ok=True)
-
     async def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         params = {k: v for k, v in (params or {}).items() if v not in (None, "")}
         key = f"{path}?{sorted(params.items())}"
         hit = self._cache.get(key)
         if hit and time.monotonic() - hit[0] < self._ttl:
             return hit[1]
-        on_disk = self._disk_read(key)
-        if on_disk and 0 <= time.time() - on_disk[0] < self._disk_ttl:  # <0 : horloge reculée
-            self._cache[key] = (time.monotonic(), on_disk[1])
-            return on_disk[1]
-        stale = hit[1] if hit else on_disk[1] if on_disk else None
+        on_disk = self._disk.lookup(key)
+        if on_disk and on_disk.fresh:
+            self._cache[key] = (time.monotonic(), on_disk.data)
+            return on_disk.data
+        stale = hit[1] if hit else on_disk.data if on_disk else None
 
         try:
             resp = await self._request(path, params)
@@ -143,7 +112,7 @@ class RickMortyClient:
 
         data = resp.json()
         self._cache[key] = (time.monotonic(), data)
-        self._disk_write(key, data)
+        self._disk.store(key, data)
         return data
 
     async def get_bytes(self, url: str) -> bytes:

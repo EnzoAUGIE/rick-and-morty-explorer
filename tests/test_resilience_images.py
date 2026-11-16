@@ -259,7 +259,7 @@ def test_failed_disk_write_leaves_no_tmp_file(tmp_cache, monkeypatch):
 
     def boom(*a, **k):
         raise OSError("disque plein")
-    monkeypatch.setattr("app.client.os.replace", boom)
+    monkeypatch.setattr("app.disk_cache.os.replace", boom)
 
     async def scenario():
         cl = RickMortyClient(transport=fake_api.transport, backoff=0)
