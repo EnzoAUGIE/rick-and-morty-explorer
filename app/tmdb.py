@@ -19,9 +19,11 @@ IMG_BASE = "https://image.tmdb.org/t/p/w500"
 
 
 class TmdbClient:
-    def __init__(self, api_key: str = config.TMDB_API_KEY, *,
+    def __init__(self, api_key: str | None = None, *,
                  show_id: int = config.TMDB_SHOW_ID,
                  transport: httpx.AsyncBaseTransport | None = None) -> None:
+        if api_key is None:  # lue à la construction, pas à l'import (tests, environnement)
+            api_key = config.TMDB_API_KEY
         self.enabled = bool(api_key)
         self._key, self._show = api_key, show_id
         self._http = httpx.AsyncClient(base_url="https://api.themoviedb.org/3",

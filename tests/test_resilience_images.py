@@ -3,6 +3,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app import config
 from app.client import RickMortyClient
 from app.illustrations import kind_of, location_art
 from app.main import create_app
@@ -269,3 +270,13 @@ def test_failed_disk_write_leaves_no_tmp_file(tmp_cache, monkeypatch):
 
     assert asyncio.run(scenario()).name == "Rick Sanchez"
     assert not list((tmp_cache / "api").glob("*"))
+
+
+def test_tmdb_key_read_at_construction(monkeypatch):
+    assert TmdbClient().enabled is False  # clé "" posée par la fixture autouse
+    # sans tmdb=, create_app ne lit pas la vraie clé de l'environnement
+    with TestClient(create_app(transport=fake_api.transport, client_options={"backoff": 0})) as c:
+        r = c.get("/episodes")
+    assert r.status_code == 200 and 'class="mosaic"' in r.text and "TMDB" not in r.text
+    monkeypatch.setattr(config, "TMDB_API_KEY", "x")
+    assert TmdbClient().enabled is True
