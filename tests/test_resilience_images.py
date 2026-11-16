@@ -239,6 +239,9 @@ def test_api_cache_never_contains_tmdb_key(tmp_cache):
         c.get("/episodes/3")
     files = [f for f in tmp_cache.rglob("*") if f.is_file()]
     assert files and all(b"api_key" not in f.read_bytes() for f in files)
+    key = fake_tmdb.KEY.encode()
+    assert all(key not in f.read_bytes() and key not in f.name.encode() for f in files)
+    assert list((tmp_cache / "tmdb").iterdir())  # le cache TMDB existe : pas vert par vacuité
 
 
 def test_tmdb_attribution_shown_when_an_image_is_displayed():

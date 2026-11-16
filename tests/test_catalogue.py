@@ -254,3 +254,93 @@ def test_rm_outage_during_guest_resolution_gives_plain_text_then_recovers():
         assert 'href="/characters/1"' not in r.text
         state["down"] = False  # la panne n'a pas été mémorisée
         assert 'href="/characters/1"' in c.get("/episodes/601").text
+
+
+# ---------- cache disque TMDB et secret
+def _start(tmdb):
+    return TestClient(create_app(transport=fake_api.transport, client_options={"backoff": 0},
+                                 tmdb=tmdb))
+
+
+def test_tmdb_cache_reused_after_restart(tmp_cache):
+    with _start(fake_tmdb.client()) as c:
+        c.get("/episodes")
+    fake_tmdb.calls.clear()
+    with _start(fake_tmdb.client()) as c:
+        assert 'href="/episodes/601"' in c.get("/episodes").text
+    assert fake_tmdb.calls == []
+
+
+def test_tmdb_cache_expires_after_ttl(tmp_cache):
+    with _start(fake_tmdb.client(disk_ttl=0)) as c:
+        c.get("/episodes")
+    fake_tmdb.calls.clear()
+    with _start(fake_tmdb.client(disk_ttl=0)) as c:
+        c.get("/episodes")
+    assert fake_tmdb.calls
+
+
+def test_stale_tmdb_cache_used_when_tmdb_down(tmp_cache, caplog):
+    with _start(fake_tmdb.client(disk_ttl=0)) as c:
+        c.get("/episodes")
+    down = {"show": "down", 1: "down", 6: "down", 7: "down"}
+    with caplog.at_level("WARNING", logger="app.tmdb"):
+        with _start(fake_tmdb.client(disk_ttl=0, fail=down)) as c:
+            assert 'href="/episodes/601"' in c.get("/episodes").text
+    assert "périmé" in caplog.text and fake_tmdb.KEY not in caplog.text
+
+
+def test_unreadable_tmdb_cache_is_ignored(tmp_cache):
+    with _start(fake_tmdb.client()) as c:
+        c.get("/episodes")
+    for f in (tmp_cache / "tmdb").iterdir():
+        f.write_text("{pas du json")
+    fake_tmdb.calls.clear()
+    with _start(fake_tmdb.client()) as c:
+        r = c.get("/episodes")
+    assert r.status_code == 200 and 'href="/episodes/601"' in r.text and fake_tmdb.calls
+
+
+def test_tmdb_cache_write_failure_leaves_no_file(tmp_cache, monkeypatch):
+    with _start(fake_tmdb.client()) as c:
+        c.get("/episodes")
+    files = list((tmp_cache / "tmdb").iterdir())
+    assert files and all(f.suffix == ".json" for f in files)  # pas de fichier temporaire
+
+    def boom(*a, **k):
+        raise OSError("disque plein")
+    monkeypatch.setattr("app.disk_cache.os.replace", boom)
+    for f in files:
+        f.unlink()
+    with _start(fake_tmdb.client()) as c:
+        r = c.get("/episodes")
+    assert r.status_code == 200 and 'href="/episodes/601"' in r.text
+    assert not list((tmp_cache / "tmdb").glob("*"))
+
+
+def test_tmdb_failure_is_not_cached(tmp_cache):
+    with _start(fake_tmdb.client(fail={6: 429})) as c:
+        assert 'href="/episodes/601"' not in c.get("/episodes").text
+    fake_tmdb.calls.clear()
+    with _start(fake_tmdb.client()) as c:
+        assert 'href="/episodes/601"' in c.get("/episodes").text
+    assert [p.rsplit("/", 1)[1] for p in fake_tmdb.calls] == ["6"]
+
+
+def test_tmdb_cache_key_does_not_depend_on_api_key(tmp_cache):
+    with _start(fake_tmdb.client()) as c:
+        c.get("/episodes")
+    fake_tmdb.calls.clear()
+    other = TmdbClient("AUTRE-CLE", transport=fake_tmdb.transport(key="AUTRE-CLE"))
+    with _start(other) as c:
+        assert 'href="/episodes/601"' in c.get("/episodes").text
+    assert fake_tmdb.calls == []
+
+
+@pytest.mark.parametrize("failure", [401, 429, "down"])
+def test_api_key_never_in_logs_on_tmdb_failure(failure, caplog):
+    with caplog.at_level("DEBUG"):
+        with _start(fake_tmdb.client(fail={"show": failure, 1: failure, 6: failure})) as c:
+            c.get("/episodes")
+    assert fake_tmdb.KEY not in caplog.text
+    assert all(fake_tmdb.KEY not in rec.getMessage() for rec in caplog.records)

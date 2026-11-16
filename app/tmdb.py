@@ -6,6 +6,8 @@ la liste des saisons puis chaque saison (saison 0 exclue) : 1 + N requêtes.
 Sans clé, ou si TMDB échoue, `listing()` renvoie ce qu'il a pu lire (au pire rien) et
 le catalogue sert l'API R&M seule : la page ne casse jamais à cause de TMDB.
 
+Réponses mises en cache sur disque (DiskCache « tmdb », 7 jours), réutilisées même
+périmées si TMDB échoue ; un échec n'est jamais mis en cache.
 La clé d'API ne doit jamais apparaître dans un log ni dans une clé de cache.
 """
 from __future__ import annotations
@@ -18,6 +20,7 @@ from typing import Any
 import httpx
 
 from . import config
+from .disk_cache import DiskCache
 
 log = logging.getLogger("app.tmdb")
 IMG_BASE = "https://image.tmdb.org/t/p/w500"
@@ -77,19 +80,28 @@ def _entry(raw: Any, season: int) -> TmdbEntry | None:
 class TmdbClient:
     def __init__(self, api_key: str | None = None, *,
                  show_id: int = config.TMDB_SHOW_ID,
-                 transport: httpx.AsyncBaseTransport | None = None) -> None:
+                 transport: httpx.AsyncBaseTransport | None = None,
+                 disk_ttl: int = config.DISK_CACHE_TTL_SECONDS) -> None:
         if api_key is None:  # lue à la construction, pas à l'import (tests, environnement)
             api_key = config.TMDB_API_KEY
         self.enabled = bool(api_key)
         self._key, self._show = api_key, show_id
         self._http = httpx.AsyncClient(base_url="https://api.themoviedb.org/3",
                                        timeout=8, transport=transport)
+        self._disk = DiskCache("tmdb", disk_ttl)
 
     async def aclose(self) -> None:
         await self._http.aclose()
 
     async def _get_json(self, path: str) -> dict | None:
-        """None si TMDB échoue : on le journalise et l'appelant passe en mode dégradé."""
+        """Réponse JSON, depuis le cache si frais. None si TMDB échoue sans cache :
+        l'appelant passe alors en mode dégradé."""
+        key = f"{path}?language=fr-FR"  # jamais api_key : la clé n'entre pas dans le cache
+        cached = self._disk.lookup(key)
+        if cached and not isinstance(cached.data, dict):  # JSON valide mais inattendu
+            cached = None
+        if cached and cached.fresh:
+            return cached.data
         try:
             r = await self._http.get(path, params={"api_key": self._key, "language": "fr-FR"})
             r.raise_for_status()
@@ -100,8 +112,13 @@ class TmdbClient:
             # pas str(exc) : le message d'httpx contient l'URL, donc la clé api_key
             reason = (f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
                       else type(exc).__name__)
+            if cached:
+                log.warning("TMDB %s indisponible (%s) : réponse en cache (périmée) utilisée",
+                            path, reason)
+                return cached.data
             log.warning("TMDB %s indisponible (%s) : épisodes R&M seuls", path, reason)
-            return None
+            return None  # un échec n'est jamais stocké
+        self._disk.store(key, data)
         return data
 
     async def listing(self) -> TmdbListing:
