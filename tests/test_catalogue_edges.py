@@ -445,3 +445,45 @@ def test_degraded_old_state_is_replaced_by_a_complete_one_after_refusals(monkeyp
         html = c.get("/episodes").text
         assert "<small>23</small>" in html and 'href="/episodes/601"' in html
         assert "<small>23</small>" in c.get("/episodes").text
+
+
+# ---------- après revue : Catalogue.detail (lecture d'un seul état)
+def test_last_complementary_episode_has_previous_but_no_next(full_client):
+    html = full_client.get("/episodes/703").text
+    assert "Position : 23 / 23" in html and "Épisode suivant" not in html
+    assert 'href="/episodes/702"' in html and "Épisode précédent" in html
+    assert html.count('class="season-ep') == 3 and html.count('class="season-ep current"') == 1
+
+
+def test_first_complementary_episode_links_back_to_last_rm_episode(full_client):
+    html = full_client.get("/episodes/601").text
+    assert 'href="/episodes/10"' in html and "Épisode précédent" in html
+
+
+def test_rm_episode_detail_keeps_characters_and_locations_with_full_catalogue(full_client, client):
+    # même page avec et sans TMDB : personnages et lieux R&M inchangés
+    with_tmdb, without = full_client.get("/episodes/1").text, client.get("/episodes/1").text
+    assert "<h2>4 personnages</h2>" in with_tmdb and "<h2>4 personnages</h2>" in without
+    assert "Lieux liés" in with_tmdb and "Lieux liés" in without
+    assert with_tmdb.count('class="card char-card"') == without.count('class="card char-card"')
+    assert "Position : 1 / 23" in with_tmdb and "Position : 1 / 10" in without
+
+
+def test_moved_id_redirect_target_is_served(full_client, monkeypatch):
+    data = copy.deepcopy(fake_api.DATA)
+    data["episode"].append(dict(data["episode"][0], id=11, episode="S06E01",
+                                url=f"{fake_api.BASE}/episode/11"))
+    monkeypatch.setattr(fake_api, "DATA", data)
+    r = full_client.get("/episodes/601", follow_redirects=True)
+    assert r.status_code == 200 and r.url.path == "/episodes/11"
+    assert "Position : 11 / 23" in r.text  # le catalogue reste à 23 épisodes
+
+
+def test_unknown_id_during_cold_outage_is_503_not_404():
+    def down(request):
+        raise httpx.ConnectError("offline")
+    app = create_app(transport=httpx.MockTransport(down), client_options={"backoff": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app) as c:
+        assert c.get("/episodes/999").status_code == 503
+        assert c.get("/episodes/3").status_code == 503
