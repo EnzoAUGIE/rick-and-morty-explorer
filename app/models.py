@@ -5,7 +5,7 @@ Pydantic valide le JSON de l'API et expose des propriétés pratiques
 """
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, field_validator
 
@@ -82,14 +82,29 @@ class Location(BaseModel):
         return [i for i in map(id_from_url, self.residents) if i is not None]
 
 
+class Guest(BaseModel):
+    """Invité d'un épisode complémentaire : lié à une fiche, ou texte simple."""
+    name: str
+    character_id: int | None = None
+
+
 class Episode(BaseModel):
     id: int
     name: str
     air_date: str
     episode: str  # code type "S01E01"
     characters: list[str]
-    url: str
-    created: str
+    url: str = ""  # vide pour un épisode complémentaire
+    created: str = ""
+    source: Literal["rm", "tmdb"] = "rm"
+    summary: str = ""
+    image: str | None = None
+    guests: list[Guest] = []
+
+    @property
+    def uses_tmdb(self) -> bool:
+        """Vrai si TMDB fournit une donnée visible : épisode complémentaire ou image."""
+        return self.source == "tmdb" or bool(self.image)
 
     @property
     def character_ids(self) -> list[int]:
@@ -109,11 +124,12 @@ class Episode(BaseModel):
         """4 personnages pour la mosaïque de secours (sans image TMDB).
 
         Rick, Morty, Summer, Beth et Jerry sont dans presque tous les épisodes :
-        on met d'abord les invités, pour que chaque épisode ait une image distincte.
+        on met d'abord les personnages secondaires, pour que chaque épisode ait une
+        image distincte.
         """
         ids = self.character_ids
-        guests = [i for i in ids if i not in MAIN_CAST]
-        picks = (guests + [i for i in ids if i in MAIN_CAST])[:4]
+        secondary = [i for i in ids if i not in MAIN_CAST]
+        picks = (secondary + [i for i in ids if i in MAIN_CAST])[:4]
         return [avatar_url(i) for i in picks]
 
 

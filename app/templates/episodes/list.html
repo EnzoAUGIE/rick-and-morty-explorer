@@ -8,7 +8,7 @@
     <input type="search" name="name" value="{{ name }}" placeholder="Rechercher un épisode…">
     <select name="season" onchange="this.form.submit()">
       <option value="">Toutes saisons</option>
-      {% for s in range(1, 6) %}
+      {% for s in seasons %}
         <option value="{{ s }}" {{ 'selected' if season == s|string }}>Saison {{ s }}</option>
       {% endfor %}
     </select>
@@ -21,10 +21,10 @@
   <div class="grid grid-wide">
     {% for ep in page.results %}
       <a class="card" href="/episodes/{{ ep.id }}">
-        {{ episode_cover(ep, stills) }}
+        {{ episode_cover(ep) }}
         <div class="card-body">
           <strong>{{ ep.name }}</strong>
-          <small>{{ ep.air_date }} · {{ ep.characters | length }} personnages</small>
+          <small>{{ ep.air_date or "Date inconnue" }}{% if ep.source == "rm" %} · {{ ep.characters | length }} personnages{% endif %}</small>
         </div>
       </a>
     {% endfor %}

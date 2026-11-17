@@ -12,6 +12,9 @@ DISK_CACHE_TTL_SECONDS: int = int(os.getenv("RM_DISK_CACHE_TTL", str(7 * 24 * 36
 API_RETRIES: int = int(os.getenv("RM_API_RETRIES", "3"))
 API_BACKOFF: float = float(os.getenv("RM_API_BACKOFF", "0.5"))  # 0.5s, 1s, 2s…
 
+# Un catalogue d'épisodes incomplet (mode dégradé) est reconstruit après ce délai (secondes)
+CATALOGUE_RETRY_SECONDS: int = int(os.getenv("RM_CATALOGUE_RETRY", "60"))
+
 # Cache disque (avatars et réponses JSON de l'API : .cache/avatars, .cache/api)
 CACHE_DIR: Path = Path(os.getenv("RM_CACHE_DIR", Path(__file__).parent.parent / ".cache"))
 

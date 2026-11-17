@@ -20,6 +20,14 @@ _Avoid_: épisode TMDB, épisode manquant, épisode externe
 Ensemble fusionné des épisodes R&M et des épisodes complémentaires. Pour un même code, l'API R&M l'emporte.
 _Avoid_: liste d'épisodes (désigne une page affichée, pas l'ensemble)
 
+**Construction à froid**:
+Première construction du **catalogue**, quand aucun catalogue n'est encore en mémoire : elle lit les deux sources, directement ou depuis leurs caches disque.
+_Avoid_: démarrage, préchauffage
+
+**Mode dégradé**:
+État du **catalogue** servi avec une source absente ou partielle (sans TMDB, TMDB en panne, liste R&M incomplète) : la page s'affiche sans erreur avec ce qui est disponible.
+_Avoid_: mode secours, fallback
+
 **Invité**:
 Personnage nommé par TMDB pour un épisode complémentaire. Il est **lié** quand son nom correspond à une fiche R&M, sinon il reste du **texte simple**.
 _Avoid_: guest star, acteur

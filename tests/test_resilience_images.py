@@ -3,13 +3,14 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app import config
 from app.client import RickMortyClient
 from app.illustrations import kind_of, location_art
 from app.main import create_app
 from app.models import Location
 from app.tmdb import TmdbClient
 
-from . import fake_api
+from . import fake_api, fake_tmdb
 
 
 def flaky(fail_times: int, status: int = 429):
@@ -113,18 +114,9 @@ def test_episode_mosaic_without_tmdb(client):
     assert 'class="mosaic"' in html and "TMDB" not in html
 
 
-def fake_tmdb():
-    def handler(request):
-        assert request.url.params["api_key"] == "k"
-        season = int(request.url.path.rsplit("/", 1)[1])
-        return httpx.Response(200, json={"episodes": [
-            {"episode_number": n, "still_path": f"/s{season}e{n}.jpg"} for n in range(1, 12)]})
-    return TmdbClient("k", transport=httpx.MockTransport(handler))
-
-
 def test_episode_stills_with_tmdb():
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         html = c.get("/episodes").text
         detail = c.get("/episodes/3").text
@@ -149,14 +141,16 @@ def test_mosaic_prefers_guest_characters():
 
 def test_tmdb_failure_never_logs_api_key(caplog):
     """Un échec TMDB (clé refusée, réseau) ne doit jamais écrire la clé dans les logs."""
-    import asyncio
     secret = "SECRET-KEY-123"
     t = TmdbClient(secret, transport=httpx.MockTransport(lambda r: httpx.Response(401, json={})))
-    ep = type("E", (), {"id": 1, "season": 1, "number": 1})()
+    app = create_app(transport=fake_api.transport, client_options={"backoff": 0}, tmdb=t)
     with caplog.at_level("WARNING", logger="app.tmdb"):
-        assert asyncio.run(t.stills([ep])) == {}
+        with TestClient(app) as c:
+            r = c.get("/episodes")
+    assert r.status_code == 200 and 'class="mosaic"' in r.text and "TMDB" not in r.text
     assert "401" in caplog.text            # la cause reste visible
     assert secret not in caplog.text
+    assert all(secret not in rec.getMessage() for rec in caplog.records)
 
 
 # ---------- cache disque des réponses API
@@ -232,24 +226,27 @@ def test_tmdb_attribution_hidden_when_tmdb_returns_no_image():
 
 def test_tmdb_attribution_hidden_on_pages_without_episode_images():
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         assert "TMDB" not in c.get("/characters").text
 
 
 def test_api_cache_never_contains_tmdb_key(tmp_cache):
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         c.get("/episodes")
         c.get("/episodes/3")
     files = [f for f in tmp_cache.rglob("*") if f.is_file()]
     assert files and all(b"api_key" not in f.read_bytes() for f in files)
+    key = fake_tmdb.KEY.encode()
+    assert all(key not in f.read_bytes() and key not in f.name.encode() for f in files)
+    assert list((tmp_cache / "tmdb").iterdir())  # le cache TMDB existe : pas vert par vacuité
 
 
 def test_tmdb_attribution_shown_when_an_image_is_displayed():
     app = create_app(transport=fake_api.transport, client_options={"backoff": 0},
-                     tmdb=fake_tmdb())
+                     tmdb=fake_tmdb.client())
     with TestClient(app) as c:
         assert "themoviedb.org" in c.get("/episodes").text
 
@@ -259,7 +256,7 @@ def test_failed_disk_write_leaves_no_tmp_file(tmp_cache, monkeypatch):
 
     def boom(*a, **k):
         raise OSError("disque plein")
-    monkeypatch.setattr("app.client.os.replace", boom)
+    monkeypatch.setattr("app.disk_cache.os.replace", boom)
 
     async def scenario():
         cl = RickMortyClient(transport=fake_api.transport, backoff=0)
@@ -269,3 +266,13 @@ def test_failed_disk_write_leaves_no_tmp_file(tmp_cache, monkeypatch):
 
     assert asyncio.run(scenario()).name == "Rick Sanchez"
     assert not list((tmp_cache / "api").glob("*"))
+
+
+def test_tmdb_key_read_at_construction(monkeypatch):
+    assert TmdbClient().enabled is False  # clé "" posée par la fixture autouse
+    # sans tmdb=, create_app ne lit pas la vraie clé de l'environnement
+    with TestClient(create_app(transport=fake_api.transport, client_options={"backoff": 0})) as c:
+        r = c.get("/episodes")
+    assert r.status_code == 200 and 'class="mosaic"' in r.text and "TMDB" not in r.text
+    monkeypatch.setattr(config, "TMDB_API_KEY", "x")
+    assert TmdbClient().enabled is True

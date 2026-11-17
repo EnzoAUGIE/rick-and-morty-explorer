@@ -43,18 +43,28 @@
 this.onerror=null;this.src='/static/img/placeholder.svg'
 {%- endmacro %}
 
-{# Couverture d'épisode : image TMDB si disponible, sinon mosaïque des personnages #}
-{% macro episode_cover(ep, stills, big=false) %}
+{# Couverture d'épisode : image TMDB si disponible, cadre neutre pour un épisode
+   complémentaire, sinon mosaïque des personnages #}
+{% macro episode_cover(ep, big=false) %}
   <div class="cover{{ ' cover-big' if big }}">
-    {% if stills.get(ep.id) %}
-      <img src="{{ stills[ep.id] }}" alt="{{ ep.name }}" loading="lazy" onerror="{{ fallback() }}">
+    {% if ep.image %}
+      <img src="{{ ep.image }}" alt="{{ ep.name }}" loading="lazy" onerror="{{ fallback() }}">
+    {% elif ep.source == "tmdb" %}
+      <div class="cover-empty"></div>
     {% else %}
       <div class="mosaic">
         {% for src in ep.cover_avatars %}<img src="{{ src }}" alt="" loading="lazy" onerror="{{ fallback() }}">{% endfor %}
       </div>
     {% endif %}
     <span class="badge cover-badge">{{ ep.episode }}</span>
+    {% if ep.source == "tmdb" %}<span class="badge badge-source">source TMDB</span>{% endif %}
   </div>
+{% endmacro %}
+
+{# Invité d'un épisode complémentaire : lien vers sa fiche, sinon texte simple #}
+{% macro guest_chip(g) %}
+  {% if g.character_id %}<a class="chip" href="/characters/{{ g.character_id }}">{{ g.name }}</a>
+  {% else %}<span class="chip chip-muted">{{ g.name }}</span>{% endif %}
 {% endmacro %}
 
 

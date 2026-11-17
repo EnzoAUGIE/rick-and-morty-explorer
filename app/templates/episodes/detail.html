@@ -1,20 +1,21 @@
 {% extends "base.html" %}
-{% from "_macros.html" import character_card, empty, episode_cover, filter_link %}
+{% from "_macros.html" import character_card, empty, episode_cover, filter_link, guest_chip %}
 {% block title %}{{ ep.name }} · Rick & Morty{% endblock %}
 {% block content %}
 <a class="back" href="/episodes">← Tous les épisodes</a>
 <article class="panel detail detail-wide">
-  {{ episode_cover(ep, stills, big=true) }}
+  {{ episode_cover(ep, big=true) }}
   <div>
     <h1>{{ ep.name }}</h1>
     <dl class="facts">
       <dt>Code</dt><dd>{{ ep.episode }}</dd>
       <dt>Saison</dt><dd>{{ filter_link('/episodes', 'season', ep.season, 'Saison ' ~ ep.season) }}</dd>
-      <dt>Diffusion</dt><dd>{{ ep.air_date }}</dd>
+      <dt>Diffusion</dt><dd>{{ ep.air_date or "Date inconnue" }}</dd>
     </dl>
+    <p class="muted small">Position : {{ pos.index }} / {{ pos.total }}</p>
     <div class="ep-nav">
-      {% if ep.id > 1 %}<a class="btn-ghost" href="/episodes/{{ ep.id - 1 }}">← Épisode précédent</a>{% endif %}
-      {% if ep.id < total %}<a class="btn-ghost" href="/episodes/{{ ep.id + 1 }}">Épisode suivant →</a>{% endif %}
+      {% if pos.previous %}<a class="btn-ghost" href="/episodes/{{ pos.previous.id }}">← Épisode précédent</a>{% endif %}
+      {% if pos.next %}<a class="btn-ghost" href="/episodes/{{ pos.next.id }}">Épisode suivant →</a>{% endif %}
     </div>
   </div>
 </article>
@@ -26,7 +27,7 @@
     {% for e in season_eps %}
       <a class="season-ep{{ ' current' if e.id == ep.id }}" href="/episodes/{{ e.id }}"
          {{ 'aria-current="page"' if e.id == ep.id }} title="{{ e.name }}">
-        {{ episode_cover(e, stills) }}
+        {{ episode_cover(e) }}
         <span>{{ e.name }}</span>
       </a>
     {% endfor %}
@@ -34,6 +35,19 @@
 </section>
 {% endif %}
 
+{% if ep.source == "tmdb" %}
+<section class="panel">
+  <h2>Résumé</h2>
+  <p>{{ ep.summary or "Résumé indisponible" }}</p>
+</section>
+
+<section class="panel">
+  <h2>Invités</h2>
+  {% if ep.guests %}
+    <div class="chips">{% for g in ep.guests %}{{ guest_chip(g) }}{% endfor %}</div>
+  {% else %}{{ empty("Aucun invité connu.") }}{% endif %}
+</section>
+{% else %}
 {% if locations %}
 <section class="panel">
   <h2>Lieux liés</h2>
@@ -55,4 +69,5 @@
     <div class="grid">{% for c in characters %}{{ character_card(c) }}{% endfor %}</div>
   {% else %}{{ empty() }}{% endif %}
 </section>
+{% endif %}
 {% endblock %}
