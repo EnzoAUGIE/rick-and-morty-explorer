@@ -16,7 +16,9 @@ async def list_episodes(
     season: str = "",
     catalogue: Catalogue = Depends(get_catalogue),
 ):
-    data = await catalogue.list(page, name=name, season=int(season) if season.isascii() and season.isdigit() else None)
+    # chiffres ASCII seulement : int() rejette d'autres chiffres que str.isdigit() accepte
+    season_no = int(season) if season.isascii() and season.isdigit() else None
+    data = await catalogue.list(page, name=name, season=season_no)
     return templates.TemplateResponse(
         request, "episodes/list.html",
         {"theme": "episodes", "page": data, "name": name, "season": season,

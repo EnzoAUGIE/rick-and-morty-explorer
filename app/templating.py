@@ -1,11 +1,15 @@
 """Instance Jinja2 partagée + dépendance pour récupérer le client API."""
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from .client import RickMortyClient
 from .illustrations import location_art
+
+if TYPE_CHECKING:
+    from .catalogue import Catalogue
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
@@ -18,5 +22,5 @@ def get_client(request: Request) -> RickMortyClient:
     return request.app.state.client
 
 
-def get_catalogue(request: Request):
+def get_catalogue(request: Request) -> "Catalogue":
     return request.app.state.catalogue

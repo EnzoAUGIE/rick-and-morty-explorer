@@ -269,9 +269,9 @@ def test_concurrent_first_visits_to_a_detail_search_each_guest_once():
 
 
 def test_failed_partial_rebuild_keeps_the_previous_catalogue(monkeypatch):
-    """BUG : PLAN A8 « si une reconstruction échoue, on garde l'ancien état ». Ici R&M répond
-    mais la page 2 est en 429 sans aucun cache : la reconstruction partielle remplace un catalogue
-    complet (23 épisodes) par 5 épisodes R&M, et les épisodes complémentaires disparaissent."""
+    """PLAN A8 « si une reconstruction échoue, on garde l'ancien état ». R&M répond mais la page 2
+    est en 429 sans aucun cache : la reconstruction partielle ne remplace pas un catalogue complet
+    (23 épisodes), qui garde ses épisodes complémentaires."""
     monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)  # reconstruction à chaque requête
 
     def handler(request):
