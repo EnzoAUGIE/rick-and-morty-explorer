@@ -34,18 +34,18 @@ async def episode_detail(
     client: RickMortyClient = Depends(get_client),
 ):
     try:
-        episode = await catalogue.get(episode_id)
+        detail = await catalogue.detail(episode_id)
     except EpisodeMoved as moved:  # ADR-0001 : R&M sert maintenant ce code
         return RedirectResponse(f"/episodes/{moved.episode_id}", status_code=301)
+    episode, season_eps = detail.episode, detail.season_eps
     characters = await client.get_many("character", episode.character_ids)
     # Lieux apparaissant dans l'épisode = lieux actuels des personnages présents
     loc_ids = {c.location.id for c in characters if c.location.id}
     locations = await client.get_many("location", sorted(loc_ids))
-    season_eps = await catalogue.same_season(episode)
     return templates.TemplateResponse(
         request, "episodes/detail.html",
         {"theme": "episodes", "ep": episode, "characters": characters,
-         "locations": locations, "pos": await catalogue.locate(episode),
+         "locations": locations, "pos": detail.position,
          "season_eps": season_eps,
          "tmdb": episode.uses_tmdb or any(e.uses_tmdb for e in season_eps)},
     )

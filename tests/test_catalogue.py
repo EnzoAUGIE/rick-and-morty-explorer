@@ -490,3 +490,28 @@ def test_no_tmdb_mention_without_key(client, path):
 def test_character_and_location_pages_ignore_complementary_episodes(full_client, path):
     html = full_client.get(path).text
     assert not re.search(r'href="/episodes/[1-9]\d\d"', html) and "TMDB" not in html
+
+
+def test_rebuild_during_detail_request_never_gives_a_500(monkeypatch):
+    """Le catalogue expire (TTL 0) et R&M se met à servir S06E01 pendant la résolution des
+    invités de /episodes/601 : la requête lit un seul état et ne fait jamais de 500."""
+    monkeypatch.setattr(config, "CACHE_TTL_SECONDS", 0)
+    flip = {"armed": False}
+
+    def handler(request):
+        if flip["armed"] and request.url.path == "/api/character":
+            flip["armed"] = False
+            data = copy.deepcopy(fake_api.DATA)
+            data["episode"].append(dict(data["episode"][0], id=11, episode="S06E01",
+                                        url=f"{fake_api.BASE}/episode/11"))
+            monkeypatch.setattr(fake_api, "DATA", data)
+        return fake_api.handler(request)
+
+    app = create_app(transport=httpx.MockTransport(handler),
+                     client_options={"backoff": 0, "ttl": 0, "disk_ttl": 0},
+                     tmdb=fake_tmdb.client())
+    with TestClient(app, raise_server_exceptions=False) as c:
+        assert c.get("/episodes").status_code == 200
+        flip["armed"] = True
+        r = c.get("/episodes/601", follow_redirects=False)
+    assert r.status_code in (200, 301)

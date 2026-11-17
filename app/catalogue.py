@@ -68,6 +68,13 @@ class Position:
 
 
 @dataclass(frozen=True)
+class Detail:
+    episode: Episode  # invités liés à leur fiche pour un épisode complémentaire
+    season_eps: list[Episode]
+    position: Position
+
+
+@dataclass(frozen=True)
 class _State:
     episodes: list[Episode]
     by_id: dict[int, Episode]
@@ -184,15 +191,26 @@ class Catalogue:
         """Saisons présentes dans le catalogue, triées."""
         return sorted({e.season for e in (await self._ensure()).episodes})
 
-    async def get(self, episode_id: int) -> Episode:
-        """Lève NotFoundError (inconnu) ou EpisodeMoved (code désormais servi par R&M)."""
+    async def detail(self, episode_id: int) -> Detail:
+        """Épisode, épisodes de sa saison et position, lus dans UN SEUL état du catalogue
+        (une reconstruction en cours de requête ne peut pas les rendre incohérents).
+
+        Lève NotFoundError (inconnu) ou EpisodeMoved (code désormais servi par R&M)."""
         state = await self._ensure()
-        if episode_id in state.by_id:
-            return await self._with_linked_guests(state.by_id[episode_id])
-        code = _code_of(episode_id)
-        if code in state.rm_by_code:
-            raise EpisodeMoved(state.rm_by_code[code].id)
-        raise NotFoundError(f"/episode/{episode_id}")
+        if episode_id not in state.by_id:
+            code = _code_of(episode_id)
+            if code in state.rm_by_code:
+                raise EpisodeMoved(state.rm_by_code[code].id)
+            raise NotFoundError(f"/episode/{episode_id}")
+        ep = state.by_id[episode_id]
+        episodes = state.episodes
+        i = next(n for n, e in enumerate(episodes) if e.id == ep.id)
+        return Detail(
+            episode=await self._with_linked_guests(ep),
+            season_eps=[e for e in episodes if ep.season and e.season == ep.season],
+            position=Position(index=i + 1, total=len(episodes),
+                              previous=episodes[i - 1] if i > 0 else None,
+                              next=episodes[i + 1] if i + 1 < len(episodes) else None))
 
     async def _with_linked_guests(self, ep: Episode) -> Episode:
         """Lie les invités d'un épisode complémentaire à leur fiche, une requête par nom au plus.
@@ -234,16 +252,3 @@ class Catalogue:
         page = await self._client.list("character", 1, name=_strip_accents(name))
         ids = [c.id for c in page.results if _fold(c.name) == _fold(name)]
         return min(ids) if ids else None
-
-    async def same_season(self, ep: Episode) -> list[Episode]:
-        if not ep.season:
-            return []
-        return [e for e in (await self._ensure()).episodes if e.season == ep.season]
-
-    async def locate(self, ep: Episode) -> Position:
-        """Voisins et rang de l'épisode dans l'ordre du catalogue."""
-        episodes = (await self._ensure()).episodes
-        i = next(n for n, e in enumerate(episodes) if e.id == ep.id)
-        return Position(index=i + 1, total=len(episodes),
-                        previous=episodes[i - 1] if i > 0 else None,
-                        next=episodes[i + 1] if i + 1 < len(episodes) else None)
